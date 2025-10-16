@@ -2,10 +2,6 @@ import { Request, Response } from "express";
 import { prisma } from "../prisma";
 import { formatTournamentResponse, formatPlayerResponse } from "../utils/controllerHelpers";
 
-/**
- * Admin Controller
- * Handles all admin-related operations for tournaments, players, and statistics
- */
 
 /**
  * POST /api/admin/tournaments

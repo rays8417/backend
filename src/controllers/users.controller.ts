@@ -1,15 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../prisma';
 
-/**
- * Users Controller
- * Handles user tracking and metrics
- */
 
-/**
- * POST /api/users/track
- * Track a wallet connection for metrics
- */
 export const trackUser = async (req: Request, res: Response) => {
   try {
     const { address } = req.body;
