@@ -91,71 +91,7 @@ export const getUserRewards = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * GET /api/user-rewards/tournament/:tournamentId
- * Get all rewards for a specific tournament
- */
-export const getTournamentRewards = async (req: Request, res: Response) => {
-  try {
-    const { tournamentId } = req.params;
 
-    if (!tournamentId) {
-      return res.status(400).json({ error: 'Tournament ID is required' });
-    }
-
-    // Validate tournament
-    const validation = await validateTournament(tournamentId);
-    if (validation.error) {
-      return res.status(validation.error.status).json({ error: validation.error.message });
-    }
-
-    const tournament = validation.tournament!;
-
-    // Get reward pool for this tournament
-    const rewardPool = await prisma.rewardPool.findFirst({
-      where: { tournamentId },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    if (!rewardPool) {
-      return res.json({
-        success: true,
-        tournament: formatTournamentInfo(tournament),
-        totalRewards: 0,
-        rewards: []
-      });
-    }
-
-    // Get all rewards for this pool
-    const rewards = await prisma.userReward.findMany({
-      where: { rewardPoolId: rewardPool.id },
-      orderBy: { amount: 'desc' }
-    });
-
-    // Calculate total distributed
-    const totalDistributed = calculateTotalEarnings(rewards);
-
-    res.json({
-      success: true,
-      tournament: formatTournamentInfo(tournament),
-      rewardPool: {
-        id: rewardPool.id,
-        totalAmount: Number(rewardPool.totalAmount),
-        distributedAmount: Number(rewardPool.distributedAmount),
-        distributionType: rewardPool.distributionType
-      },
-      totalRewards: rewards.length,
-      totalDistributed,
-      rewards: rewards.map(formatLeaderboardEntry)
-    });
-  } catch (error) {
-    console.error('Error fetching tournament rewards:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch tournament rewards',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-};
 
 /**
  * GET /api/user-rewards/address/:address/tournament/:tournamentId
@@ -231,7 +167,7 @@ export const getUserRewardForTournament = async (req: Request, res: Response) =>
  * GET /api/user-rewards/leaderboard/universal
  * Get universal leaderboard - top earners across all tournaments
  */
-export const getUniversalLeaderboard = async (req: Request, res: Response) => {
+export const getLeaderboard = async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string) || 100;
 

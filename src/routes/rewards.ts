@@ -2,7 +2,6 @@ import express from "express";
 import {
   distributeSnapshotBasedRewards,
   getAdminInfo,
-  getAdminBalance,
   createRewardPool,
   processReward,
   updateRewardStatus,
@@ -18,7 +17,6 @@ router.post("/distribute-snapshot-based", distributeSnapshotBasedRewards);
 router.post("/calculate-snapshot-based", calculateSnapshotBasedRewards);
 
 router.get("/admin-info", getAdminInfo);
-router.get("/admin-balance", getAdminBalance);
 
 router.post("/create-pool", createRewardPool);
 

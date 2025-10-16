@@ -149,10 +149,8 @@ export async function createContractSnapshot(
       blockNumber: currentBlockNumber.toString(),
       contractAddress: contractAddress || process.env.APTOS_CONTRACT_ADDRESS || '0xaf230e3024e92da6a3a15f5a6a3f201c886891268717bf8a21157bb73a1c027b',
       
-      // Pure contract data
       holders: groupedHolders,
       
-      // Computed statistics
       totalHolders: statistics.totalHolders,
       totalTokens: statistics.totalTokens,
       uniqueAddresses: statistics.uniqueAddresses

@@ -527,36 +527,6 @@ export const getLiveLeaderboard = async (req: Request, res: Response) => {
 };
 
 /**
- * GET /api/live-scores/discover/live-matches
- * Discover all currently live matches from Cricbuzz
- */
-export const discoverLiveMatches = async (req: Request, res: Response) => {
-  try {
-    log('📡 Fetching all live matches from Cricbuzz API...', 'blue');
-    
-    const liveMatches = await fetchLiveMatches();
-    const matches = parseLiveMatchesResponse(liveMatches);
-    
-    log(`✅ Found ${matches.length} live matches`, 'green');
-    
-    res.json({
-      success: true,
-      totalMatches: matches.length,
-      matches,
-      hint: "Use matchId to create or update your tournament"
-    });
-  } catch (error: any) {
-    console.error("Live matches fetch error:", error);
-    res.status(500).json({ 
-      success: false,
-      error: "Failed to fetch live matches",
-      details: error.message,
-      hint: "Check your RAPIDAPI_KEY in .env file"
-    });
-  }
-};
-
-/**
  * GET /api/live-scores/discover/match/:matchId
  * Check if a specific match is live
  */

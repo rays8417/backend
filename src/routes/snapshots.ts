@@ -4,13 +4,9 @@ import {
   getSnapshotsForTournament,
   getSnapshotById,
   getUserHoldingsHistory,
-  comparePrePostSnapshots,
   getUserHoldingsFromSnapshotEndpoint,
   validateEligibility,
-  compareTwoSnapshots,
-  compareAptos,
-  getAptosHolders,
-  getAptosHoldersByModule,
+  getTokenHoldersByModule,
 } from '../controllers/snapshots.controller';
 
 const router = express.Router();
@@ -24,16 +20,9 @@ router.get('/:id', getSnapshotById);
 router.get('/user/:userId/holdings', getUserHoldingsHistory);
 router.get('/user/:address/holdings/:tournamentId', getUserHoldingsFromSnapshotEndpoint);
 
-// Comparison routes
-router.post('/compare-pre-post', comparePrePostSnapshots);
-router.post('/compare', compareTwoSnapshots);
-router.post('/compare-aptos', compareAptos);
-
 // Eligibility routes
 router.post('/validate-eligibility', validateEligibility);
 
-// Aptos holder routes
-router.get('/aptos-holders', getAptosHolders);
-router.get('/aptos-holders/:moduleName', getAptosHoldersByModule);
+router.get('/token-holders/:moduleName', getTokenHoldersByModule);
 
 export default router;

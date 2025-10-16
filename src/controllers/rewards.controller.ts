@@ -286,39 +286,6 @@ export const getAdminInfo = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * GET /api/rewards/admin-balance
- * Check admin account balance (legacy endpoint)
- */
-export const getAdminBalance = async (req: Request, res: Response) => {
-  try {
-    if (!REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS) {
-      return res.status(400).json({ 
-        error: "Admin account address not configured" 
-      });
-    }
-
-    const balance = await aptos.getAccountAPTAmount({
-      accountAddress: REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS
-    });
-
-    const balanceInAPT = Number(balance) / 100000000;
-
-    res.json({
-      success: true,
-      adminAddress: REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS,
-      balance: balanceInAPT,
-      balanceOctas: balance.toString(),
-      message: `Admin account has ${balanceInAPT} APT`
-    });
-  } catch (error) {
-    console.error("Error checking admin balance:", error);
-    res.status(500).json({ 
-      error: "Failed to check admin balance", 
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-};
 
 /**
  * POST /api/rewards/create-pool
