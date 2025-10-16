@@ -18,7 +18,10 @@
     "scores:update": "ts-node src/scripts/update-scores.ts update",
     "scores:get": "ts-node src/scripts/update-scores.ts get",
     "scores:fetch-api": "ts-node src/scripts/update-scores.ts fetch-from-api",
-    "tournament:end": "ts-node src/scripts/end-tournament.ts end-with-snapshot"
+    "tournament:end": "ts-node src/scripts/end-tournament.ts end-with-snapshot",
+    "db:export": "ts-node src/scripts/export-data.ts",
+    "db:import": "ts-node src/scripts/import-data.ts",
+    "db:migrate-with-data": "ts-node src/scripts/migrate-database.ts"
   },
   "keywords": [],
   "author": "",
