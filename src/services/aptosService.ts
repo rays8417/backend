@@ -367,42 +367,7 @@ export async function getTokenHoldersWithBalances(): Promise<TokenHolderBalance[
   }
 }
 
-/**
- * Get all players with their Aptos module names from database
- */
-export async function getPlayersWithModules() {
-  try {
-    // Import prisma singleton
-    const { prisma } = await import('../prisma');
-    
-    const players = await prisma.player.findMany({
-      where: {
-        aptosTokenAddress: {
-          not: null
-        }
-      },
-      select: {
-        id: true,
-        name: true,
-        aptosTokenAddress: true
-      }
-    });
 
-    // Map aptosTokenAddress to module name
-    // Assuming aptosTokenAddress contains the module name or can be derived from it
-    const playersWithModules = players.map(player => ({
-      id: player.id,
-      name: player.name,
-      moduleName: player.aptosTokenAddress || player.name.replace(/\s+/g, '') // Fallback to player name
-    }));
-
-    await prisma.$disconnect();
-    return playersWithModules;
-  } catch (error) {
-    console.error('Error fetching players with modules:', error);
-    throw new Error(`Failed to get players with modules: ${error}`);
-  }
-}
 
 /**
  * Test function to debug balance fetching with a single module

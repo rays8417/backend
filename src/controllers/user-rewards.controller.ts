@@ -213,8 +213,7 @@ export const getUserRewardForTournament = async (req: Request, res: Response) =>
         amount: Number(reward.amount),
         percentage: reward.percentage ? Number(reward.percentage) : null,
         status: reward.status,
-        transactionId: reward.aptosTransactionId,
-        rank: reward.rank,
+        transactionId: reward.transactionId,
         createdAt: reward.createdAt,
         metadata: reward.metadata
       }

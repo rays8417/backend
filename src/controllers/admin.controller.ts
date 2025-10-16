@@ -20,8 +20,7 @@ export const createTournament = async (req: Request, res: Response) => {
       team1,
       team2,
       venue,
-      entryFee,
-      maxParticipants,
+      matchId,
     } = req.body;
 
     // Validation
@@ -40,9 +39,8 @@ export const createTournament = async (req: Request, res: Response) => {
         team1,
         team2,
         venue: venue || null,
-        entryFee: entryFee || 0,
-        maxParticipants: maxParticipants || null,
         status: "UPCOMING",
+        matchId: matchId || null,
       },
     });
 
@@ -134,65 +132,6 @@ export const deleteTournament = async (req: Request, res: Response) => {
 };
 
 
-/**
- * POST /api/admin/players
- * Create a new player
- */
-export const createPlayer = async (req: Request, res: Response) => {
-  try {
-    const { name, team, role, creditValue } = req.body;
-
-    // Validation
-    if (!name || !team || !role || creditValue === undefined) {
-      return res.status(400).json({ 
-        error: "Name, team, role, and credit value are required" 
-      });
-    }
-
-    // Create player
-    const player = await prisma.player.create({
-      data: { name, team, role },
-    });
-
-    res.json({
-      success: true,
-      player: formatPlayerResponse(player),
-    });
-  } catch (error) {
-    console.error("Player creation error:", error);
-    res.status(500).json({ error: "Failed to create player" });
-  }
-};
-
-/**
- * PUT /api/admin/players/:id
- * Update an existing player
- */
-export const updatePlayer = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { name, team, role, isActive } = req.body;
-
-    // Update player with only provided fields
-    const player = await prisma.player.update({
-      where: { id },
-      data: {
-        ...(name && { name }),
-        ...(team && { team }),
-        ...(role && { role }),
-        ...(isActive !== undefined && { isActive }),
-      },
-    });
-
-    res.json({
-      success: true,
-      player: formatPlayerResponse(player),
-    });
-  } catch (error) {
-    console.error("Player update error:", error);
-    res.status(500).json({ error: "Failed to update player" });
-  }
-};
 
 /**
  * GET /api/admin/stats

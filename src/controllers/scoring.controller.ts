@@ -199,11 +199,7 @@ export const getTournamentScores = async (req: Request, res: Response) => {
     const tournament = await prisma.tournament.findUnique({
       where: { id: tournamentId },
       include: {
-        playerScores: {
-          include: {
-            player: true,
-          },
-        },
+        playerScores: true
       },
     });
 

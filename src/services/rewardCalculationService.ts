@@ -61,14 +61,13 @@ async function getPlayerScores(tournamentId: string): Promise<PlayerScoreData[]>
       select: {
         moduleName: true,
         fantasyPoints: true,
-        playerId: true
+
       }
     });
 
     return playerScores.map(score => ({
       moduleName: score.moduleName || 'Unknown',
       fantasyPoints: Number(score.fantasyPoints),
-      playerId: score.playerId || undefined
     }));
   } catch (error) {
     console.error('[REWARD_CALC] Error getting player scores:', error);

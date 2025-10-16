@@ -96,40 +96,7 @@ export const getTournamentById = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * GET /api/tournaments/:id/players
- * Get available players for tournament
- */
-export const getTournamentPlayers = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
 
-    const validation = await validateTournament(id, { team1: true, team2: true });
-    if (validation.error) {
-      return res.status(validation.error.status).json({ error: validation.error.message });
-    }
-
-    const tournament = validation.tournament!;
-
-    const players = await prisma.player.findMany({
-      where: {
-        team: {
-          in: [tournament.team1, tournament.team2],
-        },
-        isActive: true,
-      },
-      orderBy: [{ team: "asc" }, { role: "asc" }, { tokenPrice: "desc" }],
-    });
-
-    res.json({
-      success: true,
-      players: players.map(formatPlayerResponse),
-    });
-  } catch (error) {
-    console.error("Players fetch error:", error);
-    res.status(500).json({ error: "Failed to fetch players" });
-  }
-};
 
 /**
  * GET /api/tournaments/:id/eligible-players
