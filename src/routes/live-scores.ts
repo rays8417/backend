@@ -5,7 +5,6 @@ import {
   stopPollingEndpoint,
   getPollingStatus,
   getLiveLeaderboard,
-  discoverLiveMatches,
   checkMatchStatus,
 } from "../controllers/live-scores.controller";
 
@@ -21,7 +20,6 @@ router.get("/:tournamentId/leaderboard", getLiveLeaderboard);
 router.get("/", getPollingStatus);
 
 // Discovery routes
-router.get("/discover/live-matches", discoverLiveMatches);
 router.get("/discover/match/:matchId", checkMatchStatus);
 
 export default router;

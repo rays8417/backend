@@ -3,8 +3,6 @@ import {
   createTournament,
   updateTournament,
   deleteTournament,
-  createPlayer,
-  updatePlayer,
   getStats,
 } from "../controllers/admin.controller";
 
@@ -16,9 +14,6 @@ router.put("/tournaments/:id", updateTournament);
 router.delete("/tournaments/:id", deleteTournament);
 
 
-// Player routes
-router.post("/players", createPlayer);
-router.put("/players/:id", updatePlayer);
 
 // Statistics routes
 router.get("/stats", getStats);
