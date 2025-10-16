@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
   provider = "prisma-client-js"
@@ -13,58 +8,31 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Cricket Fantasy Sports Database Schema
-// Contract-first architecture - minimal database for tournaments, snapshots, and rewards
-
 model Tournament {
   id          String   @id @default(uuid())
   name        String
   description String?
-  matchDate   DateTime // Single match date
-  team1       String   // Team 1 name
-  team2       String   // Team 2 name
+  matchDate   DateTime 
+  team1       String   
+  team2       String   
   venue       String?
-  entryFee    Decimal  @default(0) // Entry fee in APT tokens
-  maxParticipants Int? // Maximum number of participants
-  currentParticipants Int @default(0) // Current number of participants
+  currentParticipants Int @default(0) 
   status      TournamentStatus @default(UPCOMING)
-  aptosEventId String? // Aptos blockchain event ID
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  matchId     String? // Match ID from the cricket API
+  matchId     String?
   
-  // Relations
   playerScores PlayerScore[]
-  rewardPools RewardPool[]
+  rewardPools RewardPool?
+  snapshots Snapshot[]
   
   @@map("tournaments")
-}
-
-model Player {
-  id          String   @id @default(uuid())
-  name        String
-  team        String   // Team name
-  role        PlayerRole
-  creditValue Decimal  @default(10.0) // Credit value for fantasy team building
-  tokenSupply BigInt   @default(20000000) // 20M token supply
-  tokenPrice  Decimal  @default(1.0) // Initial token price in APT
-  isActive    Boolean  @default(true)
-  aptosPlayerId String? // Aptos blockchain player token ID
-  aptosTokenAddress String? // Aptos token address
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  // Relations
-  playerScores PlayerScore[]
-  
-  @@map("players")
 }
 
 model PlayerScore {
   id          String   @id @default(uuid())
   tournamentId String
-  playerId    String?  // Made optional to support contract-based scoring
-  moduleName  String?  // Contract module name (for contract-based scoring)
+  moduleName  String?  
   runs        Int      @default(0)
   ballsFaced  Int      @default(0)
   wickets     Int      @default(0)
@@ -73,32 +41,27 @@ model PlayerScore {
   catches     Int      @default(0)
   stumpings   Int      @default(0)
   runOuts     Int      @default(0)
-  fantasyPoints Decimal @default(0) // Calculated fantasy points
+  fantasyPoints Decimal @default(0) 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
-  // Relations
   tournament  Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
-  player      Player? @relation(fields: [playerId], references: [id], onDelete: Cascade)
   
-  @@unique([tournamentId, playerId])
   @@unique([tournamentId, moduleName])
   @@map("player_scores")
 }
 
 model RewardPool {
   id          String   @id @default(uuid())
-  tournamentId String
+  tournamentId String @unique
   name        String
-  totalAmount Decimal  // Total reward amount in APT tokens
-  distributedAmount Decimal @default(0) // Amount already distributed
+  totalAmount Decimal  
+  distributedAmount Decimal @default(0) 
   distributionType RewardDistributionType @default(PERCENTAGE)
-  distributionRules Json // JSON containing distribution logic
-  aptosPoolId String? // Aptos blockchain pool ID
+  distributionRules Json 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
-  // Relations
+
   tournament  Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
   rewards     UserReward[]
   
@@ -107,32 +70,34 @@ model RewardPool {
 
 model UserReward {
   id          String   @id @default(uuid())
-  address     String   // Wallet address (no user table needed)
+  address     String  
   rewardPoolId String
-  rank        Int?     // User's rank in tournament
-  amount      Decimal  @default(0) // Reward amount in APT tokens
-  percentage  Decimal? // Percentage of total pool
+  amount      Decimal  @default(0) 
+  percentage  Decimal? 
   status      RewardStatus @default(PENDING)
-  aptosTransactionId String? // Aptos blockchain transaction ID
-  metadata    Json?    // Additional reward details (score, holdings, etc.)
+  transactionId String? 
+  metadata    Json?   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
-  // Relations
   rewardPool  RewardPool @relation(fields: [rewardPoolId], references: [id], onDelete: Cascade)
   
   @@map("user_rewards")
 }
 
-model ContractSnapshot {
+model Snapshot {
   id          String   @id @default(uuid())
-  contractType ContractType
+  tournamentId    String     
+  snapshotType SnapshotType
   contractAddress String
   blockNumber BigInt
-  data        Json     // Snapshot data from contract
+  data        Json     
   createdAt   DateTime @default(now())
   
-  @@map("contract_snapshots")
+  tournament  Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  @@index([tournamentId, snapshotType]) 
+  @@unique([tournamentId, snapshotType])
+  @@map("snapshots")
 }
 
 model User {
@@ -152,12 +117,6 @@ enum TournamentStatus {
   CANCELLED
 }
 
-enum PlayerRole {
-  BATSMAN
-  BOWLER
-  ALL_ROUNDER
-  WICKET_KEEPER
-}
 
 enum RewardDistributionType {
   PERCENTAGE
@@ -172,7 +131,7 @@ enum RewardStatus {
   FAILED
 }
 
-enum ContractType {
+enum SnapshotType {
   PRE_MATCH
   POST_MATCH
 }

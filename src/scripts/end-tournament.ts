@@ -1,6 +1,6 @@
 #!/usr/bin/env ts-node
 
-import { TournamentStatus, ContractType } from '@prisma/client';
+import { TournamentStatus } from '@prisma/client';
 import { Command } from 'commander';
 import { prisma } from '../prisma';
 import { createContractSnapshot, createSnapshotSummary } from '../services/contractSnapshotService';
@@ -41,10 +41,10 @@ async function takePostMatchSnapshot(tournamentId: string) {
   }
 
   // Check for existing snapshot
-  const existing = await prisma.contractSnapshot.findFirst({
+  const existing = await prisma.snapshot.findFirst({
     where: {
-      data: { path: ['tournamentId'], equals: tournamentId },
-      contractType: 'POST_MATCH' as ContractType
+      tournamentId,
+      snapshotType: 'POST_MATCH'
     },
     orderBy: { createdAt: 'desc' }
   });
@@ -63,7 +63,7 @@ async function takePostMatchSnapshot(tournamentId: string) {
   console.log(`   Holders: ${snapshot.totalHolders}`);
   console.log(`   Addresses: ${snapshot.uniqueAddresses}\n`);
 
-  const snapshotData = await prisma.contractSnapshot.findUnique({
+  const snapshotData = await prisma.snapshot.findUnique({
     where: { id: snapshot.snapshotId }
   });
   if (snapshotData) {
@@ -91,8 +91,8 @@ async function calculateRewards(tournamentId: string, totalRewardAmount?: number
 
   // Use existing reward pool or provided amount
   let rewardPool;
-  if (tournament.rewardPools.length > 0) {
-    rewardPool = tournament.rewardPools[0];
+  if (tournament.rewardPools) {
+    rewardPool = tournament.rewardPools;
     totalRewardAmount = totalRewardAmount || Number(rewardPool.totalAmount);
     console.log(`Using existing reward pool: ${rewardPool.id}`);
     console.log(`Total Pool: ${totalRewardAmount} BOSON\n`);
@@ -220,7 +220,7 @@ async function distributeRewards(
           rewardPoolId,
           amount: reward.rewardAmount,
           status: 'COMPLETED',
-          aptosTransactionId: committed.hash,
+          transactionId: committed.hash,
           metadata: {
             totalScore: reward.totalScore,
             totalTokens: reward.totalTokens,

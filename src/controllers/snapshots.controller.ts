@@ -109,7 +109,7 @@ export const getSnapshotById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
-    const snapshot = await prisma.contractSnapshot.findUnique({
+    const snapshot = await prisma.snapshot.findUnique({
       where: { id }
     });
 
@@ -121,7 +121,8 @@ export const getSnapshotById = async (req: Request, res: Response) => {
       success: true,
       snapshot: {
         id: snapshot.id,
-        contractType: snapshot.contractType,
+        tournamentId: snapshot.tournamentId,
+        snapshotType: snapshot.snapshotType,
         contractAddress: snapshot.contractAddress,
         blockNumber: snapshot.blockNumber.toString(),
         data: snapshot.data,
@@ -151,11 +152,10 @@ export const getUserHoldingsHistory = async (req: Request, res: Response) => {
     };
 
     if (tournamentId) {
-      whereClause.data.path = ['tournamentId'];
-      whereClause.data.equals = tournamentId;
+      whereClause.tournamentId = tournamentId;
     }
 
-    const snapshots = await prisma.contractSnapshot.findMany({
+    const snapshots = await prisma.snapshot.findMany({
       where: whereClause,
       orderBy: { createdAt: 'asc' }
     });
@@ -278,8 +278,8 @@ export const compareTwoSnapshots = async (req: Request, res: Response) => {
     }
 
     const [snapshot1, snapshot2] = await Promise.all([
-      prisma.contractSnapshot.findUnique({ where: { id: snapshotId1 } }),
-      prisma.contractSnapshot.findUnique({ where: { id: snapshotId2 } })
+      prisma.snapshot.findUnique({ where: { id: snapshotId1 } }),
+      prisma.snapshot.findUnique({ where: { id: snapshotId2 } })
     ]);
 
     if (!snapshot1 || !snapshot2) {

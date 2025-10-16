@@ -67,7 +67,7 @@ async function startTournament(tournamentId: string) {
   console.log(`   Unique Addresses: ${snapshot.uniqueAddresses}\n`);
 
   // Display snapshot summary
-  const snapshotData = await prisma.contractSnapshot.findUnique({
+  const snapshotData = await prisma.snapshot.findUnique({
     where: { id: snapshot.snapshotId }
   });
   
@@ -107,9 +107,8 @@ async function listTournaments() {
     console.log(`   Status: ${t.status}`);
     console.log(`   Teams: ${t.team1} vs ${t.team2}`);
     console.log(`   Date: ${t.matchDate.toISOString()}`);
-    if (t.rewardPools.length > 0) {
-      const total = t.rewardPools.reduce((sum, p) => sum + Number(p.totalAmount), 0);
-      console.log(`   💰 Reward Pool: ${total} BOSON`);
+    if (t.rewardPools) {
+      console.log(`   💰 Reward Pool: ${Number(t.rewardPools.totalAmount)} BOSON`);
     }
     console.log('');
   });

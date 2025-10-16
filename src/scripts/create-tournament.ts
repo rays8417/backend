@@ -17,22 +17,20 @@ interface TournamentData {
   team1: string;
   team2: string;
   venue?: string;
-  entryFee: number;
   matchId: string;
   rewardPoolAmount: number;
 }
 
 // Sample tournament data (customize as needed)
 const sampleTournament: TournamentData = {
-  name: "India vs Pakistan - Asia Cup 2025",
-  description: "High stakes match",
-  matchDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-  team1: "India",
-  team2: "Pakistan",
-  venue: "Dubai International Cricket Stadium",
-  entryFee: 0,
-  matchId: "130179", // Replace with actual Cricbuzz match ID
-  rewardPoolAmount: 100 // 100 BOSON tokens
+  name: "Australia vs India ",
+  description: "India tour of Australia, 2025 - 1st ODI",
+  matchDate: new Date(1760844600000),
+  team1: "Australia",
+  team2: "India",
+  venue: "Perth Stadium",
+  matchId: "116912", // Replace with actual Cricbuzz match ID
+  rewardPoolAmount: 50000 // 100 BOSON tokens
 };
 
 /**
@@ -57,10 +55,8 @@ async function createTournament(tournamentData: TournamentData) {
       team2: tournamentData.team2,
       venue: tournamentData.venue,
       status: TournamentStatus.UPCOMING,
-      entryFee: tournamentData.entryFee,
       matchId: tournamentData.matchId,
-      currentParticipants: 0,
-      maxParticipants: null
+      currentParticipants: 0
     }
   });
 

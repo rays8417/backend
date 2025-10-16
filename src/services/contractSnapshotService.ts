@@ -240,9 +240,10 @@ export async function createContractSnapshot(
     console.log('\n' + '='.repeat(80));
 
     // Step 5: Store snapshot in database
-    const snapshot = await prisma.contractSnapshot.create({
+    const snapshot = await prisma.snapshot.create({
       data: {
-        contractType: snapshotType,
+        tournamentId,
+        snapshotType,
         contractAddress: snapshotData.contractAddress,
         blockNumber: BigInt(currentBlockNumber || '0'),
         data: snapshotData as any // Type assertion for Prisma JSON field
@@ -277,13 +278,10 @@ export async function getContractSnapshot(
   snapshotType: 'PRE_MATCH' | 'POST_MATCH'
 ): Promise<ContractSnapshotData | null> {
   try {
-    const snapshot = await prisma.contractSnapshot.findFirst({
+    const snapshot = await prisma.snapshot.findFirst({
       where: {
-        data: {
-          path: ['tournamentId'],
-          equals: tournamentId
-        },
-        contractType: snapshotType
+        tournamentId,
+        snapshotType
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -305,12 +303,9 @@ export async function getContractSnapshot(
  */
 export async function getTournamentSnapshots(tournamentId: string): Promise<ContractSnapshotData[]> {
   try {
-    const snapshots = await prisma.contractSnapshot.findMany({
+    const snapshots = await prisma.snapshot.findMany({
       where: {
-        data: {
-          path: ['tournamentId'],
-          equals: tournamentId
-        }
+        tournamentId
       },
       orderBy: { createdAt: 'asc' }
     });

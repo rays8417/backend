@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../prisma";
-import { ContractType } from "@prisma/client";
+import { SnapshotType } from "@prisma/client";
 import { aptos } from "../services/aptosService";
 import { Ed25519PrivateKey, Ed25519Account } from "@aptos-labs/ts-sdk";
 import { 
@@ -382,9 +382,7 @@ export const getTournamentRewardPools = async (req: Request, res: Response) => {
     const rewardPools = await prisma.rewardPool.findMany({
       where: { tournamentId },
       include: {
-        rewards: {
-          orderBy: { rank: "asc" },
-        },
+        rewards: true
       },
     });
 
@@ -444,7 +442,7 @@ export const processReward = async (req: Request, res: Response) => {
       where: { id: rewardId },
       data: {
         status: "PROCESSING",
-        aptosTransactionId: aptosTransactionId || null,
+        transactionId: aptosTransactionId || null,
       },
     });
 
@@ -455,7 +453,7 @@ export const processReward = async (req: Request, res: Response) => {
         id: updatedReward.id,
         amount: updatedReward.amount,
         status: updatedReward.status,
-        aptosTransactionId: updatedReward.aptosTransactionId,
+        transactionId: updatedReward.transactionId,
       },
     });
   } catch (error) {
@@ -491,7 +489,7 @@ export const updateRewardStatus = async (req: Request, res: Response) => {
       reward: {
         id: reward.id,
         status: reward.status,
-        aptosTransactionId: reward.aptosTransactionId,
+        transactionId: reward.transactionId,
       },
     });
   } catch (error) {
@@ -691,13 +689,10 @@ export const calculateSimpleRewards = async (req: Request, res: Response) => {
 
     // Step 1: Get post-match snapshot
     console.log('[SIMPLE_REWARDS] Getting post-match snapshot...');
-    const postMatchSnapshot = await prisma.contractSnapshot.findFirst({
+    const postMatchSnapshot = await prisma.snapshot.findFirst({
       where: {
-        data: {
-          path: ['tournamentId'],
-          equals: tournamentId
-        },
-        contractType: 'POST_MATCH' as ContractType
+        tournamentId,
+        snapshotType: 'POST_MATCH'
       },
       orderBy: { createdAt: 'desc' }
     });
@@ -720,7 +715,6 @@ export const calculateSimpleRewards = async (req: Request, res: Response) => {
       select: {
         moduleName: true,
         fantasyPoints: true,
-        playerId: true
       }
     });
 
