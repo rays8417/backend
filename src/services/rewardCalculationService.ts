@@ -103,7 +103,7 @@ function calculateUserScore(
       const maintainedBalance = preBalance < postBalance ? preBalance : postBalance;
       
       // Calculate points based on MAINTAINED tokens only
-      // Use proper decimals for Solana (9 decimals)
+      // Use proper decimals for Solana (3 decimals)
       const decimalMultiplier = Math.pow(10, REWARD_CONFIG.BOSON_DECIMALS);
       const tokenRatio = Number(maintainedBalance) / decimalMultiplier;
       const weightedPoints = playerScore.fantasyPoints * tokenRatio;

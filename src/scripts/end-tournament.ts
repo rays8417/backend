@@ -162,6 +162,30 @@ async function distributeRewards(
 
   for (const reward of rewardCalculations) {
     try {
+      // Skip if trying to send to admin wallet (self-transfer prevention)
+      if (reward.address === REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS) {
+        console.log(`⏭️  Skip: ${reward.address.slice(0, 12)}... (admin wallet cannot receive rewards)`);
+        
+        // Save skipped reward to database
+        await prisma.userReward.create({
+          data: {
+            address: reward.address,
+            rewardPoolId,
+            amount: reward.rewardAmount,
+            status: 'PENDING',
+            metadata: {
+              totalScore: reward.totalScore,
+              totalTokens: reward.totalTokens,
+              holdings: reward.holdings,
+              reason: 'Admin wallet cannot receive rewards'
+            }
+          }
+        });
+        
+        skipped++;
+        continue;
+      }
+
       if (reward.rewardAmount < REWARD_CONFIG.MIN_REWARD_AMOUNT) {
         console.log(`⏭️  Skip: ${reward.address.slice(0, 12)}... (too small)`);
         
@@ -203,6 +227,9 @@ async function distributeRewards(
 
       console.log(`   ✅ TX: ${result.transactionHash}\n`);
       
+      // Small delay to prevent rate limiting (only after successful transactions)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       // Save successful reward to database
       await prisma.userReward.create({
         data: {
@@ -240,6 +267,9 @@ async function distributeRewards(
           }
         }
       });
+      
+      // Small delay after failures too to prevent rapid-fire errors
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
       failed++;
     }

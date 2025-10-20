@@ -8,8 +8,8 @@ export const REWARD_CONFIG = {
   ADMIN_PRIVATE_KEY: process.env.SOLANA_ADMIN_PRIVATE_KEY || process.env.ADMIN_PRIVATE_KEY,
   ADMIN_ACCOUNT_ADDRESS: process.env.SOLANA_ADMIN_ADDRESS || process.env.ADMIN_ACCOUNT_ADDRESS,
   
-  // BOSON decimals for Solana (9 decimals)
-  BOSON_DECIMALS: Number(process.env.BOSON_DECIMALS || 9),
+  // BOSON decimals for Solana (3 decimals)
+  BOSON_DECIMALS: Number(process.env.BOSON_DECIMALS || 3),
   MIN_REWARD_AMOUNT: 0.001, // Minimum reward amount in BOSON to avoid dust
 };
 

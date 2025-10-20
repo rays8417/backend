@@ -8,7 +8,7 @@ import {
   TOKEN_2022_PROGRAM_ID,
 } from '@solana/spl-token';
 import { IBlockchainService, TokenHolder, TransferResult, AccountInfo } from '../interfaces/IBlockchainService';
-import { parseIgnoredAddresses } from '../../config/reward.config';
+import { parseIgnoredAddresses, REWARD_CONFIG } from '../../config/reward.config';
 import bs58 from 'bs58';
 import dotenv from 'dotenv';
 
@@ -21,13 +21,13 @@ dotenv.config();
  * Key features:
  * - Uses SPL Token standard for Solana tokens
  * - Token accounts are Associated Token Accounts (ATAs)
- * - 9 decimals for Solana tokens
+ * - 3 decimals for Solana tokens (configurable)
  * - Direct RPC account queries for token holders
  */
 
 // Player token mints configuration - maps player module names to Solana mint addresses
 const PLAYER_TOKEN_MINTS: Record<string, string> = {
-  'Boson': 'GgbSCKBofx3M93prUJxpYtZqYziLBbpY7QDrmyXdPqUa',
+  'Boson': 'HtnUp4FXaKC7MvpWP2N8W25rea75XspMiiw3XEixE8Jd',
   'ShubhmanGill': 'E4ixLqAcjioCVTBhW9VQxpCFHhJFnwyMVYTZJyzWQaar',
   'BenStokes': '5qBqQyobhK9rMYcK5PnwmWUY2GYpuVeqHfPpu4mAJ3rD',
   'TravisHead': '2yqdx8tQukCHHJiCUsNKGq1mXA9BEmkxSGiouE3u9SSV',
@@ -163,7 +163,7 @@ export class SolanaAdapter implements IBlockchainService {
           const hasBalance = parsedInfo.tokenAmount.uiAmount > 0 || parsedInfo.tokenAmount.amount > 0;
           
           if (hasBalance) {
-            const owner = parsedInfo.owner;
+          const owner = parsedInfo.owner;
           
           // Filter out ignored addresses (pool, AMM, etc.)
           if (IGNORED_ADDRESS_SET.has(owner.toLowerCase())) {
@@ -449,16 +449,27 @@ export class SolanaAdapter implements IBlockchainService {
 
       const toPublicKey = new PublicKey(toAddress);
 
+      // Prevent self-transfers
+      if (toPublicKey.equals(keypair.publicKey)) {
+        throw new Error(`Cannot transfer tokens to self. Admin wallet (${keypair.publicKey.toBase58()}) cannot receive rewards as it's the distributor.`);
+      }
+
       // Get source ATA (sender's token account)
+      // Allow off-curve addresses for Token-2022 support
       const sourceATA = await getAssociatedTokenAddress(
         mintAddress,
-        keypair.publicKey
+        keypair.publicKey,
+        false, // allowOwnerOffCurve for owner (usually false for source)
+        TOKEN_PROGRAM_ID // Will be updated if Token-2022 is detected
       );
 
       // Get destination ATA (receiver's token account)
+      // Allow off-curve addresses for Token-2022 support
       const destATA = await getAssociatedTokenAddress(
         mintAddress,
-        toPublicKey
+        toPublicKey,
+        true, // allowOwnerOffCurve - CRITICAL for Token-2022 support
+        TOKEN_PROGRAM_ID // Will be updated if Token-2022 is detected
       );
 
       // Ensure amount is a valid bigint for the transfer instruction
@@ -474,6 +485,16 @@ export class SolanaAdapter implements IBlockchainService {
 
       // DIAGNOSTIC: Show admin wallet info and what tokens they have
       console.log(`[SOLANA] Admin wallet address: ${keypair.publicKey.toBase58()}`);
+      
+      // Check SOL balance for transaction fees
+      const solBalance = await this.connection.getBalance(keypair.publicKey);
+      const solBalanceFormatted = solBalance / 1e9;
+      console.log(`[SOLANA] Admin SOL balance: ${solBalanceFormatted.toFixed(4)} SOL (${solBalance} lamports)`);
+      
+      if (solBalance < 5000) { // Less than 0.000005 SOL - very low threshold
+        console.warn(`[SOLANA] Warning: Very low SOL balance (${solBalanceFormatted.toFixed(6)} SOL). May cause transaction failures.`);
+      }
+      
       console.log(`[SOLANA] Looking for Boson token account...`);
       
       try {
@@ -663,16 +684,21 @@ export class SolanaAdapter implements IBlockchainService {
         throw new Error(`Transaction simulation failed: ${simError instanceof Error ? simError.message : 'Unknown simulation error'}`);
       }
       
-      const signature = await this.connection.sendTransaction(
-        transaction,
-        [keypair],
-        { 
-          skipPreflight: false,
-          maxRetries: 3
-        }
-      );
-
-      console.log(`[SOLANA] Transaction sent: ${signature}`);
+      let signature;
+      try {
+        signature = await this.connection.sendTransaction(
+          transaction,
+          [keypair],
+          { 
+            skipPreflight: false,
+            maxRetries: 3
+          }
+        );
+        console.log(`[SOLANA] Transaction sent: ${signature}`);
+      } catch (sendError) {
+        console.error(`[SOLANA] Send transaction error:`, sendError);
+        throw new Error(`Failed to send transaction: ${sendError instanceof Error ? sendError.message : 'Unknown send error'}`);
+      }
 
       // Confirm transaction with better error handling
       let confirmation;
@@ -681,13 +707,14 @@ export class SolanaAdapter implements IBlockchainService {
         console.log(`[SOLANA] Transaction confirmed: ${JSON.stringify(confirmation.value)}`);
       } catch (confirmError) {
         console.error(`[SOLANA] Confirmation error:`, confirmError);
-        throw new Error(`Transaction confirmation failed: ${confirmError instanceof Error ? confirmError.message : 'Unknown error'}`);
+        throw new Error(`Transaction confirmation failed: ${confirmError instanceof Error ? confirmError.message : 'Unknown confirmation error'}`);
       }
 
       const success = !confirmation.value.err;
       
       if (!success) {
-        console.error(`[SOLANA] Transaction failed:`, confirmation.value.err);
+        console.error(`[SOLANA] Transaction failed with error:`, confirmation.value.err);
+        console.error(`[SOLANA] Full confirmation result:`, JSON.stringify(confirmation.value, null, 2));
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
       }
 
@@ -697,11 +724,22 @@ export class SolanaAdapter implements IBlockchainService {
         explorerUrl: this.getExplorerUrl(signature),
       };
     } catch (error) {
+      console.error(`[SOLANA] Transfer failed for ${toAddress} (${amount} tokens):`, error);
+      
+      // Provide detailed error information
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        console.error(`[SOLANA] Error details: ${error.stack || 'No stack trace'}`);
+      } else {
+        console.error(`[SOLANA] Non-Error type caught:`, typeof error, error);
+      }
+      
       return {
         success: false,
         transactionHash: '',
         explorerUrl: '',
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: errorMessage,
       };
     }
   }
@@ -760,10 +798,12 @@ export class SolanaAdapter implements IBlockchainService {
   }
 
   /**
-   * Format balance with proper decimals (9 for Solana SPL tokens)
+   * Format balance with proper decimals (3 for Solana SPL tokens)
    */
   private formatBalance(balance: bigint): string {
-    return (Number(balance) / 1e9).toFixed(9);
+    const decimals = REWARD_CONFIG.BOSON_DECIMALS;
+    const divisor = Math.pow(10, decimals);
+    return (Number(balance) / divisor).toFixed(decimals);
   }
 }
 
