@@ -1,6 +1,6 @@
 # 🏏 Cricket Fantasy Backend API
 
-A comprehensive backend API for cricket fantasy sports application on Aptos blockchain, featuring centralized tournament and reward management with real-time cricket data integration.
+A comprehensive backend API for cricket fantasy sports application, featuring centralized tournament and reward management with real-time cricket data integration.
 
 ## 📋 Table of Contents
 - [Features](#-features)
@@ -18,12 +18,12 @@ A comprehensive backend API for cricket fantasy sports application on Aptos bloc
 
 ## 🚀 Features
 
-- **User Management**: Petra wallet authentication with auto-registration
+- **User Management**: Wallet authentication with auto-registration
 - **Tournament System**: One-match-per-tournament with centralized management
 - **Team Creation**: Fantasy team creation with captain/vice-captain system
 - **Real-time Scoring**: Cricket-specific fantasy point calculation
 - **Cricket API Integration**: Automatic score fetching from Cricbuzz API
-- **Reward Distribution**: Flexible reward pool management with Aptos blockchain integration
+- **Reward Distribution**: Flexible reward pool management with blockchain integration
 - **Admin Panel**: Complete admin controls for tournaments, players, and rewards
 - **Leaderboards**: Real-time tournament rankings and statistics
 - **Contract Snapshots**: Pre/post-match blockchain state tracking
@@ -37,7 +37,7 @@ A comprehensive backend API for cricket fantasy sports application on Aptos bloc
 - PostgreSQL database
 - npm or yarn
 - RapidAPI key for Cricbuzz API (for live scores)
-- Aptos wallet (for blockchain integration)
+- Wallet (for blockchain integration)
 
 ---
 
@@ -58,9 +58,9 @@ DATABASE_URL="postgresql://username:password@localhost:5432/cricket_fantasy_db"
 # Server
 PORT=3000
 
-# Aptos Blockchain
-APTOS_NETWORK="testnet"
-APTOS_CONTRACT_ADDRESS="0xYOUR_CONTRACT_ADDRESS_HERE"
+# Blockchain Configuration
+BLOCKCHAIN_NETWORK="testnet"
+CONTRACT_ADDRESS="0xYOUR_CONTRACT_ADDRESS_HERE"
 
 # Admin account for reward distribution
 ADMIN_PRIVATE_KEY="1,2,3,4,..." # Comma-separated bytes
@@ -105,7 +105,7 @@ http://localhost:3000/api
 ```
 
 ### Authentication
-All user authentication is handled via Petra wallet. Users are automatically created on first login.
+All user authentication is handled via wallet. Users are automatically created on first login.
 
 ---
 
@@ -181,7 +181,7 @@ Create contract snapshot (PRE_MATCH or POST_MATCH)
 {
   "tournamentId": "tournament-id",
   "snapshotType": "PRE_MATCH",
-  "useAptosData": true
+  "useBlockchainData": true
 }
 ```
 
@@ -196,10 +196,10 @@ Compare pre-match and post-match snapshots
 }
 ```
 
-### GET `/aptos-holders`
-Get current Aptos token holders from contract
+### GET `/blockchain-holders`
+Get current blockchain token holders from contract
 
-### GET `/aptos-holders/:moduleName`
+### GET `/blockchain-holders/:moduleName`
 Get holders for specific player module
 
 ---
@@ -216,7 +216,7 @@ Calculate rewards based on snapshot data (no distribution)
 ```
 
 ### POST `/distribute-contract-based`
-Calculate and distribute rewards via Aptos transactions
+Calculate and distribute rewards via blockchain transactions
 ```json
 {
   "tournamentId": "tournament-id",
@@ -425,7 +425,7 @@ node test-cricket-api.js
 
 ### Complete Testing Flow
 
-#### Phase 1: Sync Data from Aptos Contract
+#### Phase 1: Sync Data from Blockchain Contract
 
 ```bash
 # 1. Discover players from contract
@@ -437,7 +437,7 @@ POST http://localhost:3000/api/admin/sync-all-from-contract
 # 3. Verify synced data
 GET http://localhost:3000/api/admin/players
 GET http://localhost:3000/api/admin/users
-GET http://localhost:3000/api/snapshots/aptos-holders
+GET http://localhost:3000/api/snapshots/blockchain-holders
 ```
 
 #### Phase 2: Create Tournament
@@ -468,7 +468,7 @@ Content-Type: application/json
 {
   "tournamentId": "TOURNAMENT_ID",
   "snapshotType": "PRE_MATCH",
-  "useAptosData": true
+  "useBlockchainData": true
 }
 ```
 
@@ -491,7 +491,7 @@ Content-Type: application/json
 {
   "tournamentId": "TOURNAMENT_ID",
   "snapshotType": "POST_MATCH",
-  "useAptosData": true
+  "useBlockchainData": true
 }
 ```
 
@@ -507,7 +507,7 @@ Content-Type: application/json
   "totalRewardAmount": 100
 }
 
-# Distribute rewards (actual Aptos transactions)
+# Distribute rewards (actual blockchain transactions)
 POST http://localhost:3000/api/rewards/distribute-contract-based
 Content-Type: application/json
 
@@ -691,7 +691,7 @@ The application uses a contract-first approach:
 - **PlayerScores**: Match performance data with fantasy points
 - **ContractSnapshots**: Pre/post-match blockchain state
 - **RewardPools**: Flexible reward distribution
-- **UserRewards**: Individual reward tracking with Aptos transaction IDs
+- **UserRewards**: Individual reward tracking with blockchain transaction IDs
 
 ### Key Models
 
@@ -742,7 +742,7 @@ model UserReward {
   amount              Float
   percentage          Float?
   status              RewardStatus @default(PENDING)
-  aptosTransactionId  String?      // Blockchain transaction ID
+  transactionId       String?      // Blockchain transaction ID
   metadata            Json?
   rewardPool          RewardPool   @relation(fields: [rewardPoolId], references: [id])
 }
@@ -777,7 +777,7 @@ model UserReward {
 - Verify match ID on Cricbuzz website
 - Use `/discover/live-matches` endpoint
 
-### Aptos Connection Failed
+### Blockchain Connection Failed
 - Check network configuration
 - Verify contract address
 - Ensure wallet has funds
@@ -801,7 +801,7 @@ For issues with:
 - **API Integration**: Check `/src/services/cricketApiService.ts`
 - **Name Mapping**: Update `nameMap` in cricketApiService
 - **Fantasy Points**: Update calculation in fantasyPointsCalculator
-- **Reward Distribution**: Check aptosService and rewardCalculationService
+- **Reward Distribution**: Check blockchainService and rewardCalculationService
 
 ---
 

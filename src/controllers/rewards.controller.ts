@@ -233,7 +233,7 @@ export const getAdminInfo = async (req: Request, res: Response) => {
         sequenceNumber: accountInfo.sequenceNumber,
         network: network
       },
-      message: `Admin account has ${accountInfo.balanceFormatted} ${network.includes('Solana') ? 'SOL' : 'APT'}`
+      message: `Admin account has ${accountInfo.balanceFormatted} ${network.includes('Solana') ? 'SOL' : 'tokens'}`
     });
   } catch (error) {
     console.error("Error getting admin info:", error);
