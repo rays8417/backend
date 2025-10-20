@@ -601,17 +601,22 @@ export class SolanaAdapter implements IBlockchainService {
 
       // Check if destination token account exists, create if needed
       let destinationAccountExists = false;
+      
+      // Use getAccountInfo instead of getAccount to get better error handling
       try {
-        await getAccount(this.connection, destATA);
-        destinationAccountExists = true;
-        console.log(`[SOLANA] Destination ATA exists: ${destATA.toBase58()}`);
-      } catch (destAccountError) {
-        if (destAccountError instanceof Error && destAccountError.message.includes('could not find account')) {
+        const accountInfo = await this.connection.getAccountInfo(destATA);
+        if (accountInfo) {
+          destinationAccountExists = true;
+          console.log(`[SOLANA] Destination ATA exists: ${destATA.toBase58()}`);
+        } else {
           console.log(`[SOLANA] Destination ATA does not exist, will create it: ${destATA.toBase58()}`);
           destinationAccountExists = false;
-        } else {
-          throw new Error(`Failed to check destination account: ${destAccountError instanceof Error ? destAccountError.message : 'Unknown error'}`);
         }
+      } catch (destAccountError) {
+        const errorMessage = destAccountError instanceof Error ? destAccountError.message : String(destAccountError);
+        console.log(`[SOLANA] Error checking destination account: ${errorMessage}`);
+        console.log(`[SOLANA] Assuming destination ATA does not exist, will create it: ${destATA.toBase58()}`);
+        destinationAccountExists = false;
       }
 
       // Create transaction instructions
