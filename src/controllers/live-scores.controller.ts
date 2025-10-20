@@ -456,9 +456,9 @@ export const getLiveLeaderboard = async (req: Request, res: Response) => {
       });
     }
     
-    // Import service dynamically to avoid circular dependencies
-    const { getTokenHoldersWithBalances } = await import("../services/aptosService");
-    const tokenHolders = await getTokenHoldersWithBalances();
+    // Get token holders using blockchain abstraction
+    const { blockchain } = await import("../blockchain");
+    const tokenHolders = await blockchain.getTokenHoldersWithBalances();
     
     // Group by address
     const holdersByAddress = new Map<string, any[]>();

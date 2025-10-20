@@ -29,8 +29,8 @@ const sampleTournament: TournamentData = {
   team1: "Australia",
   team2: "India",
   venue: "Perth Stadium",
-  matchId: "116912", // Replace with actual Cricbuzz match ID
-  rewardPoolAmount: 50000 // 100 BOSON tokens
+  matchId: "130179", // Replace with actual Cricbuzz match ID
+  rewardPoolAmount: 100 // 100 BOSON tokens
 };
 
 /**

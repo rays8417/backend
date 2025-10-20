@@ -20,11 +20,11 @@ export const BLOCKCHAIN_CONFIG = {
   // All modules including game token
   ALL_MODULES: getAllModuleNames(),
   
-  // Token decimals (8 for Aptos, 18 for Ethereum, etc.)
-  TOKEN_DECIMALS: 8,
+  // Token decimals (8 for Aptos, 9 for Solana, 18 for Ethereum, etc.)
+  TOKEN_DECIMALS: 9,
   
   // Normalize factor for calculations
-  NORMALIZATION_FACTOR: 100000000, // 10^8 for Aptos
+  NORMALIZATION_FACTOR: 1000000000, // 10^9 for Solana
 };
 
 /**

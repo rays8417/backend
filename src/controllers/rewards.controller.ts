@@ -1,14 +1,13 @@
 import { Request, Response } from "express";
 import { prisma } from "../prisma";
 import { SnapshotType } from "@prisma/client";
-import { aptos } from "../services/aptosService";
-import { Ed25519PrivateKey, Ed25519Account } from "@aptos-labs/ts-sdk";
+import { blockchain } from "../blockchain";
 import { 
   calculateRewardsFromSnapshots, 
   getRewardEligibility, 
   getRewardSummary,
 } from "../services/rewardCalculationService";
-import { REWARD_CONFIG, parseIgnoredAddresses } from "../config/reward.config";
+import { REWARD_CONFIG } from "../config/reward.config";
 import { validateTournament } from "../utils/controllerHelpers";
 
 /**
@@ -19,39 +18,16 @@ import { validateTournament } from "../utils/controllerHelpers";
 // Helper Functions
 
 /**
- * Create admin account from private key - eliminates duplication
- */
-const createAdminAccount = () => {
-  if (!REWARD_CONFIG.ADMIN_PRIVATE_KEY || !REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS) {
-    throw new Error('Admin private key and account address must be configured');
-  }
-
-  const privateKeyBytes = REWARD_CONFIG.ADMIN_PRIVATE_KEY.split(',').map(Number);
-  const privateKey = new Ed25519PrivateKey(new Uint8Array(privateKeyBytes));
-  const publicKey = privateKey.publicKey();
-  const authKey = publicKey.authKey();
-  const adminAccountAddress = authKey.derivedAddress();
-
-  // Verify account address matches configuration
-  if (adminAccountAddress.toString() !== REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS) {
-    throw new Error(`Account address mismatch. Expected: ${REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS}, Got: ${adminAccountAddress}`);
-  }
-
-  return {
-    account: new Ed25519Account({ privateKey }),
-    address: adminAccountAddress,
-    publicKey
-  };
-};
-
-/**
- * Transfer BOSON tokens to user accounts using Aptos SDK
+ * Transfer BOSON tokens to user accounts using blockchain abstraction
  */
 const transferRewardsToUsers = async (rewardCalculations: any[]) => {
   console.log(`Starting real token transfers for ${rewardCalculations.length} users...`);
   
-  const { account: adminAccount, address: adminAccountAddress } = createAdminAccount();
-  console.log(`Admin account address: ${adminAccountAddress}`);
+  if (!REWARD_CONFIG.ADMIN_PRIVATE_KEY || !REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS) {
+    throw new Error('Admin private key and account address must be configured');
+  }
+
+  console.log(`Admin account address: ${REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS}`);
 
   const transferResults = [];
   
@@ -69,46 +45,34 @@ const transferRewardsToUsers = async (rewardCalculations: any[]) => {
         continue;
       }
 
-      // Convert BOSON to base units
+      // Convert BOSON to base units (blockchain adapter handles decimals)
       const multiplier = Math.pow(10, REWARD_CONFIG.BOSON_DECIMALS);
       const amountInBaseUnits = Math.floor(reward.rewardAmount * multiplier);
       
       console.log(`Transferring ${reward.rewardAmount} BOSON (${amountInBaseUnits} base units) to ${reward.address}...`);
       
-      // Create and submit transfer transaction
-      const transferTransaction = await aptos.transferCoinTransaction({
-        sender: adminAccountAddress.toString(),
-        recipient: reward.address,
-        amount: amountInBaseUnits,
-        coinType: REWARD_CONFIG.BOSON_COIN_TYPE as `${string}::${string}::${string}`,
-      });
+      // Use blockchain abstraction for transfer
+      const result = await blockchain.transferTokens(
+        REWARD_CONFIG.ADMIN_PRIVATE_KEY,
+        reward.address,
+        amountInBaseUnits,
+        'Boson' // Use module name, adapter handles mint address
+      );
 
-      const committedTransaction = await aptos.signAndSubmitTransaction({
-        signer: adminAccount,
-        transaction: transferTransaction,
-      });
-
-      console.log(`Transaction submitted: ${committedTransaction.hash}`);
-
-      // Wait for transaction
-      const transactionResult = await aptos.waitForTransaction({ 
-        transactionHash: committedTransaction.hash 
-      });
-
-      if (transactionResult.success) {
+      if (result.success) {
         console.log(`✅ Successfully transferred ${reward.rewardAmount} BOSON to ${reward.address}`);
-        console.log(`   Transaction: ${committedTransaction.hash}`);
+        console.log(`   Transaction: ${result.transactionHash}`);
         
         transferResults.push({
           ...reward,
           status: 'success',
-          transactionId: committedTransaction.hash,
-          transactionUrl: `https://explorer.aptoslabs.com/txn/${committedTransaction.hash}?network=testnet`,
-          gasUsed: transactionResult.gas_used,
+          transactionId: result.transactionHash,
+          transactionUrl: result.explorerUrl,
+          gasUsed: result.gasUsed,
           timestamp: new Date().toISOString()
         });
       } else {
-        throw new Error(`Transaction failed: ${transactionResult.vm_status}`);
+        throw new Error(result.error || 'Transaction failed');
       }
       
     } catch (transferError) {
@@ -246,36 +210,30 @@ export const distributeSnapshotBasedRewards = async (req: Request, res: Response
 
 /**
  * GET /api/rewards/admin-info
- * Get admin account information
+ * Get admin account information (blockchain-agnostic)
  */
 export const getAdminInfo = async (req: Request, res: Response) => {
   try {
-    const { address: derivedAddress, publicKey } = createAdminAccount();
+    if (!REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS) {
+      throw new Error('Admin account address must be configured');
+    }
 
-    // Get account balance
-    const balance = await aptos.getAccountAPTAmount({
-      accountAddress: derivedAddress.toString()
-    });
-
-    const balanceInAPT = Number(balance) / 100000000;
-
-    // Get account info
-    const accountInfo = await aptos.getAccountInfo({
-      accountAddress: derivedAddress.toString()
-    });
+    // Get account info using blockchain abstraction
+    const accountInfo = await blockchain.getAccountInfo(REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS);
+    const network = blockchain.getNetwork();
 
     res.json({
       success: true,
       adminInfo: {
         configuredAddress: REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS,
-        derivedAddress: derivedAddress.toString(),
-        publicKey: publicKey.toString(),
-        balance: balanceInAPT,
-        balanceOctas: balance.toString(),
-        sequenceNumber: accountInfo.sequence_number,
-        isConfiguredCorrectly: derivedAddress.toString() === REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS
+        address: accountInfo.address,
+        publicKey: accountInfo.publicKey,
+        balance: accountInfo.balanceFormatted,
+        balanceRaw: accountInfo.balance,
+        sequenceNumber: accountInfo.sequenceNumber,
+        network: network
       },
-      message: `Admin account has ${balanceInAPT} APT`
+      message: `Admin account has ${accountInfo.balanceFormatted} ${network.includes('Solana') ? 'SOL' : 'APT'}`
     });
   } catch (error) {
     console.error("Error getting admin info:", error);

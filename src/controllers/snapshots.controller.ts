@@ -7,7 +7,7 @@ import {
   getUserHoldingsFromSnapshot,
   calculateRewardEligibility
 } from '../services/contractSnapshotService';
-import { getTokenHoldersWithBalances } from '../services/aptosService';
+import { blockchain } from '../blockchain';
 
 /**
  * Snapshots Controller
@@ -234,31 +234,31 @@ export const validateEligibility = async (req: Request, res: Response) => {
 
 /**
  * GET /api/snapshots/token-holders/:moduleName
- * Get Token holders for specific player module
+ * Get Token holders for specific player module (blockchain-agnostic)
  */
 export const getTokenHoldersByModule = async (req: Request, res: Response) => {
   try {
     const { moduleName } = req.params;
     
-    const { getTokenHoldersWithBalancesForPlayer } = await import('../services/aptosService');
-    const aptosHolders = await getTokenHoldersWithBalancesForPlayer(moduleName);
+    // Use blockchain abstraction layer
+    const holders = await blockchain.getTokenHoldersForPlayer(moduleName);
     
     res.json({
       success: true,
       moduleName,
-      holders: aptosHolders.map(holder => ({
+      holders: holders.map(holder => ({
         address: holder.address,
         balance: holder.formattedBalance,
         balanceBigInt: holder.balance.toString(),
         playerId: holder.playerId
       })),
-      totalHolders: aptosHolders.length,
-      totalTokens: aptosHolders.reduce((sum, holder) => sum + holder.balance, BigInt(0)).toString()
+      totalHolders: holders.length,
+      totalTokens: holders.reduce((sum, holder) => sum + holder.balance, BigInt(0)).toString()
     });
   } catch (error) {
-    console.error(`Error fetching Aptos holders for ${req.params.moduleName}:`, error);
+    console.error(`Error fetching token holders for ${req.params.moduleName}:`, error);
     res.status(500).json({ 
-      error: `Failed to fetch Aptos token holders for ${req.params.moduleName}`,
+      error: `Failed to fetch token holders for ${req.params.moduleName}`,
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }

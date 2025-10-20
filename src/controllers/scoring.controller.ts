@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../prisma";
-import { getTokenHoldersWithBalances } from "../services/aptosService";
+import { blockchain } from "../blockchain";
 import { calculateTotalFantasyPoints } from "../utils/fantasyPointsCalculator";
 import { validateTournament, groupBy } from "../utils/controllerHelpers";
 
@@ -137,8 +137,8 @@ export const calculateUserScores = async (req: Request, res: Response) => {
       where: { tournamentId },
     });
 
-    // Get current token holders from contract
-    const tokenHolders = await getTokenHoldersWithBalances();
+    // Get current token holders from blockchain (chain-agnostic)
+    const tokenHolders = await blockchain.getTokenHoldersWithBalances();
 
     // Group token holders by address
     const holdersByAddress = groupHoldersByAddress(tokenHolders);

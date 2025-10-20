@@ -11,17 +11,18 @@
  */
 
 import { aptosAdapter } from './adapters/aptos.adapter';
+import { solanaAdapter } from './adapters/solana.adapter';
 import { IBlockchainService } from './interfaces/IBlockchainService';
 
 /**
  * Active blockchain service
  * 
  * To switch chains, just change this line:
- * export const blockchain: IBlockchainService = aptosAdapter;     // Current
+ * export const blockchain: IBlockchainService = aptosAdapter;     // Previous
+ * export const blockchain: IBlockchainService = solanaAdapter;    // Current ✅
  * export const blockchain: IBlockchainService = ethereumAdapter;  // Future
- * export const blockchain: IBlockchainService = solanaAdapter;    // Future
  */
-export const blockchain: IBlockchainService = aptosAdapter;
+export const blockchain: IBlockchainService = solanaAdapter;
 
 // Re-export interface for type checking
 export type { IBlockchainService, TokenHolder, TransferResult, AccountInfo } from './interfaces/IBlockchainService';

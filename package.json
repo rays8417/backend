@@ -29,9 +29,12 @@
   "dependencies": {
     "@aptos-labs/ts-sdk": "^5.1.0",
     "@prisma/client": "^6.16.2",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
     "@types/commander": "^2.12.0",
     "@types/cron": "^2.0.1",
     "axios": "^1.12.2",
+    "bs58": "^6.0.0",
     "commander": "^14.0.1",
     "cors": "^2.8.5",
     "cron": "^4.3.3",

@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { prisma } from "../prisma";
 import { getEligiblePlayers } from "../services/cricketApiService";
-import { getTokenBalanceFromAllModules } from "../services/aptosService";
+import { blockchain } from "../blockchain";
 import { formatTournamentResponse, formatPlayerResponse, validateTournament } from "../utils/controllerHelpers";
 
 /**
@@ -139,8 +139,8 @@ export const getEligiblePlayersForTournament = async (req: Request, res: Respons
       console.log(`🔍 Fetching holdings for address: ${address}`);
       
       try {
-        // Fetch all holdings for this address
-        const holdings = await getTokenBalanceFromAllModules(address);
+        // Fetch all holdings for this address (blockchain-agnostic)
+        const holdings = await blockchain.getBalanceForAllPlayers(address);
         console.log(`📊 Found ${holdings.length} holdings for address`);
         
         // Create a map of moduleName to balance for quick lookup

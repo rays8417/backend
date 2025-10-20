@@ -5,10 +5,8 @@ import { Command } from 'commander';
 import { prisma } from '../prisma';
 import { createContractSnapshot, createSnapshotSummary } from '../services/contractSnapshotService';
 import { calculateRewardsFromSnapshots, RewardCalculation } from '../services/rewardCalculationService';
-import { aptos } from '../services/aptosService';
-import { Ed25519PrivateKey, Ed25519Account } from '@aptos-labs/ts-sdk';
+import { blockchain } from '../blockchain';
 import { REWARD_CONFIG } from '../config/reward.config';
-import { parsePrivateKey } from '../utils/crypto';
 
 /**
  * STEP 4: End Tournament
@@ -142,7 +140,7 @@ async function calculateRewards(tournamentId: string, totalRewardAmount?: number
 }
 
 /**
- * Distribute rewards on-chain and save to database
+ * Distribute rewards on-chain and save to database (blockchain-agnostic)
  */
 async function distributeRewards(
   tournamentId: string,
@@ -156,13 +154,7 @@ async function distributeRewards(
     throw new Error('Admin credentials not configured in .env');
   }
 
-  // Create admin account - support both hex and comma-separated formats
-  const privateKeyBytes = parsePrivateKey(REWARD_CONFIG.ADMIN_PRIVATE_KEY);
-  const privateKey = new Ed25519PrivateKey(privateKeyBytes);
-  const adminAccount = new Ed25519Account({ privateKey });
-  const adminAddress = privateKey.publicKey().authKey().derivedAddress();
-
-  console.log(`Admin: ${adminAddress}\n`);
+  console.log(`Admin: ${REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS}\n`);
 
   let success = 0, failed = 0, skipped = 0;
   let totalDistributed = 0;
@@ -196,22 +188,19 @@ async function distributeRewards(
 
       console.log(`💸 ${reward.address.slice(0, 12)}... → ${reward.rewardAmount} BOSON`);
 
-      // Send transaction
-      const transferTx = await aptos.transferCoinTransaction({
-        sender: adminAddress.toString(),
-        recipient: reward.address,
-        amount: amountInBaseUnits,
-        coinType: REWARD_CONFIG.BOSON_COIN_TYPE as `${string}::${string}::${string}`,
-      });
+      // Send transaction using blockchain abstraction
+      const result = await blockchain.transferTokens(
+        REWARD_CONFIG.ADMIN_PRIVATE_KEY,
+        reward.address,
+        amountInBaseUnits,
+        'Boson' // Module name, adapter handles the mint address
+      );
 
-      const committed = await aptos.signAndSubmitTransaction({
-        signer: adminAccount,
-        transaction: transferTx,
-      });
+      if (!result.success) {
+        throw new Error(result.error || 'Transaction failed');
+      }
 
-      await aptos.waitForTransaction({ transactionHash: committed.hash });
-
-      console.log(`   ✅ TX: ${committed.hash}\n`);
+      console.log(`   ✅ TX: ${result.transactionHash}\n`);
       
       // Save successful reward to database
       await prisma.userReward.create({
@@ -220,7 +209,7 @@ async function distributeRewards(
           rewardPoolId,
           amount: reward.rewardAmount,
           status: 'COMPLETED',
-          transactionId: committed.hash,
+          transactionId: result.transactionHash,
           metadata: {
             totalScore: reward.totalScore,
             totalTokens: reward.totalTokens,
