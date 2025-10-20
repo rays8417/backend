@@ -4,6 +4,7 @@ import {
   getAssociatedTokenAddress,
   createTransferInstruction,
   TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
 } from '@solana/spl-token';
 import { IBlockchainService, TokenHolder, TransferResult, AccountInfo } from '../interfaces/IBlockchainService';
 import { parseIgnoredAddresses } from '../../config/reward.config';
@@ -26,7 +27,7 @@ dotenv.config();
 // Player token mints configuration - maps player module names to Solana mint addresses
 const PLAYER_TOKEN_MINTS: Record<string, string> = {
   'Boson': 'GgbSCKBofx3M93prUJxpYtZqYziLBbpY7QDrmyXdPqUa',
-  'ShubhmanGill': 'E4ixLqAcjioCVTBhW9VQxpYtZqYziLBbpY7QDrmyXdPqUa',
+  'ShubhmanGill': 'E4ixLqAcjioCVTBhW9VQxpCFHhJFnwyMVYTZJyzWQaar',
   'BenStokes': '5qBqQyobhK9rMYcK5PnwmWUY2GYpuVeqHfPpu4mAJ3rD',
   'TravisHead': '2yqdx8tQukCHHJiCUsNKGq1mXA9BEmkxSGiouE3u9SSV',
   'GlenMaxwell': '6mWJRGNUnjbvoqVmP5UoPRYUK7t4zrBiUY4pHBKrbuK8',
@@ -53,14 +54,45 @@ const PLAYER_TOKEN_MINTS: Record<string, string> = {
   'AlickAthanaze': '9LS4Prb6wS8TpjjztkWVRG2k81NPbpuhwZEXcv1qff43',
 };
 
-const POOL_ADDRESS = '9VNDAaie1QDxeCg1wpLwZPnYxvWFbL4jiVtWWppifJW3';
+// Pool addresses for each player token (liquidity pools for trading)
+// These should be ignored when counting token holders since they're protocol-owned
+const PLAYER_POOL_ADDRESSES = [
+  'JDD9WuLPq234fFRSPZqmUySaF8ie3PDFDQNgJg2Y9J7T', // Ben Stokes pool
+  'C8mafYpr8jonN5chS9pxix3cMWBEfgJ2YQxgGssiXoP5', // Travis Head pool
+  '4NjCSE89Pyq1cdWfygtXoj1YukDu8kPRXr31cB8Pud8e', // Glenn Maxwell pool
+  'BwrRH1WZsSH1MdHzpAeErGCp8bkXtp3GQWCwwRhzuBwe', // Shubham Dube pool
+  'Cb7dSXQE7ZnzhGR7t3u4fGfM9jHL67XXnpgukMB4ZVuS', // Hardik Pandya pool
+  'DKyPdCj9whq8MduqiNUcM9xVAsoWR89jAsdUFhRUsetJ', // Shubman Gill pool
+  '8R8yWsHRP3CXLDNf633hBrw2PyFoNJz2Q8SrT24JXxor', // Kane Williamson pool
+  'BhCEGn2mpaBGU3sD6Ma5rPfFuoHeJC2554JCpLtg9H3u', // Abhishek Sharma pool
+  '9eMF3Bzq4dJ5teoo5GBYM45xrKZ26MkMhiuzWrUdJWpc', // Jasprit Bumrah pool
+  'EnEyhg12Cm6NPvr4jbVtYCpv5snGZCF4bWmRdaC7rvNJ', // Suryakumar Yadav pool
+  'DdkpLNQ1S2SwoWgvajHvQHkraYBLk6q8sfSBrguckFxz', // Virat Kohli pool
+  '3B2UiTvsxQDF3t96UHhS9upHQ4WtjbzkHH26vGDLd7hg', // Joe Root pool
+  '9UWymQ4XLaCuyZpuxjup36z2FmZ1dsRSfXYNvLwSqAcG', // Harry Brook pool
+  'Bxdq1cGXVj9NNzbak3vVDYqAu3cjjzPuKEVhVNzA3WRi', // Yashasvi Jaiswal pool
+  'EaZ9m6p2wa8ZKkkq7SaBpCz4uaAS4SdsrqgUgeJYcyKW', // Rishabh Pant pool
+  'CFeJ9t2cMkUW7WNEyeQyriFjjd4xvpV6z36rw6YRepcF', // Rohit Sharma pool
+  '6exJH9dLUXTVBLMrZ9hoAvynbBNYhreSNKMMLHhrbesW', // KL Rahul pool
+  '4YgXZzaWJohMaZ8dJJaWVBibEG3J5txX9A5YJ4Q49W1E', // Jos Buttler pool
+  'Dmbi9NfSAXMEmTdBvmCkX5UAUa5kSE6wWseEPpUCD15E', // Josh Inglis pool
+  'AxkmS9mFsf1dEN3fENWQW1UYEuPcQ1BG2tUd1qqLG3bj', // Washington Sundar pool
+  '26K4GTuhGEFFmwwXpNfiwxc6b8xSmgSkAB6XpWYkpYzH', // Shai Hope pool
+  'BCvQHZDNCZUojZuszFy8kumkg1W3Hjnfs5eXJtqL9nRR', // John Campbell pool
+  'BrMpcXBEGs4CStAQLC1QegkkWuyduQKDLFq5VsKtCPZL', // Khary Pierre pool
+  'GBN2YumWRGAPAwZbywd2Q5txpRgwpLn7MB5FqLD86rCP', // Mohammed Siraj pool
+  '3skaq6tdwJsF8k4Q7yHeCyUZ75wR7K9DsqoHHLoBiDeL', // Alick Athanaze pool
+];
+
+// AMM PDA (protocol-level address)
 const AMM_PDA = '4ZnuhoWp9csaEm8LZeeNgbgXQ6tHoz4yTw3feA6DiH1e';
 
 // Get ignored addresses from config and add Solana-specific addresses
 const IGNORED_ADDRESS_SET = new Set([
   ...Array.from(parseIgnoredAddresses()),
-  POOL_ADDRESS.toLowerCase(),
   AMM_PDA.toLowerCase(),
+  // Add all player pool addresses to ignore list
+  ...PLAYER_POOL_ADDRESSES.map(addr => addr.toLowerCase()),
 ]);
 
 export class SolanaAdapter implements IBlockchainService {
@@ -104,6 +136,8 @@ export class SolanaAdapter implements IBlockchainService {
         console.error(`[SOLANA] Mint not found for player: ${playerModule}`);
         return [];
       }
+      console.log(`${playerModule} :  mintAddress--------------`, mintAddress);
+
 
       // Get all token accounts for this mint using getParsedProgramAccounts
       const tokenAccounts = await this.connection.getParsedProgramAccounts(
@@ -123,32 +157,40 @@ export class SolanaAdapter implements IBlockchainService {
         }
       );
 
+console.log(`${playerModule} : all tokenAccounts for the mint address --------------`, tokenAccounts);
+
+
       const holders: string[] = [];
       for (const { account } of tokenAccounts) {
         const parsedInfo = (account.data as any).parsed?.info;
-        if (parsedInfo && parsedInfo.tokenAmount.uiAmount > 0) {
-          const owner = parsedInfo.owner;
+        
+        if (parsedInfo) {
+          // Check if balance > 0 using both uiAmount and amount for safety
+          const hasBalance = parsedInfo.tokenAmount.uiAmount > 0 || parsedInfo.tokenAmount.amount > 0;
           
-          // Filter out ignored addresses (pool, AMM, etc.)
-          if (IGNORED_ADDRESS_SET.has(owner.toLowerCase())) {
-            continue;
-          }
-          
-          // Filter out off-curve addresses (PDAs, program accounts)
-          try {
-            const ownerKey = new PublicKey(owner);
-            if (!PublicKey.isOnCurve(ownerKey.toBuffer())) {
-              // Skip PDAs and program-controlled accounts
+          if (hasBalance) {
+            const owner = parsedInfo.owner;
+            
+            // Filter out ignored addresses (pool, AMM, etc.)
+            if (IGNORED_ADDRESS_SET.has(owner.toLowerCase())) {
               continue;
             }
-          } catch (err) {
-            // Invalid address, skip
-            continue;
+            
+            // Validate address format
+            try {
+              new PublicKey(owner);
+            } catch (err) {
+              console.error(`[SOLANA] Invalid address format: ${owner}`);
+              continue;
+            }
+            
+            holders.push(owner);
           }
-          
-          holders.push(owner);
         }
       }
+
+      console.log(`${playerModule} : all holders --------------`, holders);
+
 
       // Deduplicate (each owner should have only one ATA per mint, but just in case)
       return Array.from(new Set(holders));
@@ -171,35 +213,62 @@ export class SolanaAdapter implements IBlockchainService {
         return BigInt(0);
       }
 
-      // Validate that address is on-curve (not a PDA)
+      // Validate address format
       let ownerPublicKey: PublicKey;
       try {
         ownerPublicKey = new PublicKey(address);
-        // Check if address is on curve (can have an ATA)
-        if (!PublicKey.isOnCurve(ownerPublicKey.toBuffer())) {
-          // Off-curve address (PDA) - skip silently
-          return BigInt(0);
-        }
       } catch (err) {
-        // Invalid address format
         return BigInt(0);
       }
       
-      // Calculate Associated Token Account address deterministically
-      const ata = await getAssociatedTokenAddress(
-        mintAddress,
-        ownerPublicKey
-      );
+      if (playerModule === 'ShubhmanGill') {
+        console.log(`[SOLANA] 🔍 ShubhmanGill balance check:`);
+        console.log(`  - Owner: ${address}`);
+        console.log(`  - Mint: ${mintAddress.toBase58()}`);
+      }
 
+      // Instead of calculating ATA, query all token accounts owned by this address for this mint
       try {
-        const accountInfo = await getAccount(this.connection, ata);
-        return accountInfo.amount;
-      } catch (err) {
-        // Account doesn't exist = zero balance
+        const tokenAccounts = await this.connection.getParsedTokenAccountsByOwner(
+          ownerPublicKey,
+          { mint: mintAddress }
+        );
+
+        if (playerModule === 'ShubhmanGill') {
+          console.log(`  - Found ${tokenAccounts.value.length} token account(s) for this mint`);
+        }
+
+        if (tokenAccounts.value.length === 0) {
+          return BigInt(0);
+        }
+
+        // Sum up balances from all token accounts (usually just one)
+        let totalBalance = BigInt(0);
+        for (const { account } of tokenAccounts.value) {
+          const parsedInfo = account.data.parsed?.info;
+          if (parsedInfo && parsedInfo.tokenAmount) {
+            const balance = BigInt(parsedInfo.tokenAmount.amount);
+            totalBalance += balance;
+            
+            if (playerModule === 'ShubhmanGill') {
+              console.log(`  - Account balance: ${balance}`);
+              console.log(`  - Account address: ${parsedInfo.address || 'unknown'}`);
+            }
+          }
+        }
+
+        if (playerModule === 'ShubhmanGill') {
+          console.log(`  - ✅ Total balance: ${totalBalance}`);
+        }
+
+        return totalBalance;
+      } catch (error) {
+        if (playerModule === 'ShubhmanGill') {
+          console.log(`  - ❌ Error querying token accounts:`, error);
+        }
         return BigInt(0);
       }
     } catch (error) {
-      // Silently handle errors for cleaner logs
       return BigInt(0);
     }
   }
@@ -214,6 +283,8 @@ export class SolanaAdapter implements IBlockchainService {
     try {
       // Step 1: Get Boson token holders (unified holder universe)
       const bosonHolders = await this.getBosonTokenHolders();
+
+      console.log('bosonHolders--------------', bosonHolders);
       if (bosonHolders.length === 0) {
         console.log('[SOLANA] No Boson token holders found');
         return [];
@@ -221,8 +292,10 @@ export class SolanaAdapter implements IBlockchainService {
 
       console.log(`[SOLANA] Found ${bosonHolders.length} Boson token holders`);
 
-      // Step 2: Get all player modules (excluding Boson)
-      const playerModules = Array.from(this.playerMints.keys()).filter(m => m !== 'Boson');
+      // Step 2: Get all player modules (including Boson for testing)
+      const playerModules = Array.from(this.playerMints.keys());
+      
+      console.log(`[SOLANA] Checking balances for ${bosonHolders.length} holder(s) across ${playerModules.length} tokens (including Boson)...`);
       
       const balanceTasks: Promise<{
         address: string;
@@ -232,11 +305,28 @@ export class SolanaAdapter implements IBlockchainService {
       } | null>[] = [];
 
       // Step 3: For each holder, check balances across all player tokens
+      // Add delay to avoid rate limiting
+      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      
       for (const address of bosonHolders) {
-        playerModules.forEach((moduleName, index) => {
+        for (let i = 0; i < playerModules.length; i++) {
+          const moduleName = playerModules[i];
+          const index = i;
+          
           balanceTasks.push((async () => {
             try {
+              // Add small delay between requests to avoid rate limiting (100ms per request)
+              await delay(i * 100);
+              
               const balance = await this.getTokenBalance(address, moduleName);
+              
+              // Debug logging for all modules
+              if (balance > 0n) {
+                console.log(`[SOLANA] ✅ Found: ${moduleName} balance ${balance} for ${address}`);
+              } else if (moduleName === 'ShubhmanGill') {
+                console.log(`[SOLANA] ❌ ShubhmanGill: balance is 0 for ${address}`);
+              }
+              
               if (balance > 0n) {
                 return { 
                   address, 
@@ -251,7 +341,7 @@ export class SolanaAdapter implements IBlockchainService {
               return null;
             }
           })());
-        });
+        }
       }
 
       const results = await Promise.allSettled(balanceTasks);
@@ -318,11 +408,11 @@ export class SolanaAdapter implements IBlockchainService {
   }
 
   /**
-   * Get balance for address across all player tokens
+   * Get balance for address across all player tokens (including Boson for testing)
    */
   async getBalanceForAllPlayers(address: string): Promise<TokenHolder[]> {
     const balances: TokenHolder[] = [];
-    const playerModules = Array.from(this.playerMints.keys()).filter(m => m !== 'Boson');
+    const playerModules = Array.from(this.playerMints.keys());
 
     for (const moduleName of playerModules) {
       const balance = await this.getTokenBalance(address, moduleName);
