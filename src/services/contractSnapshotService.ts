@@ -124,6 +124,7 @@ export async function createContractSnapshot(
     // Step 1: Get Aptos contract data
     console.log('[CONTRACT_SNAPSHOT] Fetching data from Aptos contract...');
     const aptosHolders = await blockchain.getTokenHoldersWithBalances();
+    console.log('solanaHolders--------------', aptosHolders);
     const ignored = parseIgnoredAddresses();
     const filteredAptosHolders = aptosHolders.filter(h => !ignored.has(h.address.toLowerCase()));
     const currentBlockNumber = await blockchain.getCurrentBlockNumber();
