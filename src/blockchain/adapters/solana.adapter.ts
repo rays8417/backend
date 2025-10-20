@@ -3,6 +3,7 @@ import {
   getAccount, 
   getAssociatedTokenAddress,
   createTransferInstruction,
+  createAssociatedTokenAccountInstruction,
   TOKEN_PROGRAM_ID,
   TOKEN_2022_PROGRAM_ID,
 } from '@solana/spl-token';
@@ -17,11 +18,11 @@ dotenv.config();
  * Solana Blockchain Adapter
  * Implements IBlockchainService for Solana blockchain
  * 
- * Key differences from Aptos:
- * - Uses SPL Token standard instead of custom modules
+ * Key features:
+ * - Uses SPL Token standard for Solana tokens
  * - Token accounts are Associated Token Accounts (ATAs)
- * - 9 decimals instead of 8
- * - Direct account queries instead of view functions
+ * - 9 decimals for Solana tokens
+ * - Direct RPC account queries for token holders
  */
 
 // Player token mints configuration - maps player module names to Solana mint addresses
@@ -100,9 +101,9 @@ export class SolanaAdapter implements IBlockchainService {
   private playerMints: Map<string, PublicKey>;
 
   constructor() {
-    const rpcUrl = process.env.SOLANA_RPC_URL || process.env.QUICKNODE_API_URL;
+    const rpcUrl = process.env.SOLANA_RPC_URL;
     if (!rpcUrl) {
-      throw new Error('SOLANA_RPC_URL or QUICKNODE_API_URL must be set in environment');
+      throw new Error('SOLANA_RPC_URL must be set in environment');
     }
     
     this.connection = new Connection(rpcUrl, 'confirmed');
@@ -127,7 +128,6 @@ export class SolanaAdapter implements IBlockchainService {
    * Get token holders for a specific player
    * 
    * Solana approach: Query all token accounts for a specific mint address
-   * This is different from Aptos where we call a view function
    */
   async getTokenHolders(playerModule: string): Promise<string[]> {
     try {
@@ -164,12 +164,12 @@ export class SolanaAdapter implements IBlockchainService {
           
           if (hasBalance) {
             const owner = parsedInfo.owner;
-            
-            // Filter out ignored addresses (pool, AMM, etc.)
-            if (IGNORED_ADDRESS_SET.has(owner.toLowerCase())) {
-              continue;
-            }
-            
+          
+          // Filter out ignored addresses (pool, AMM, etc.)
+          if (IGNORED_ADDRESS_SET.has(owner.toLowerCase())) {
+            continue;
+          }
+          
             // Validate address format
             try {
               new PublicKey(owner);
@@ -195,7 +195,6 @@ export class SolanaAdapter implements IBlockchainService {
    * Get token balance for specific address and player
    * 
    * Solana approach: Calculate Associated Token Account (ATA) and read balance
-   * This is different from Aptos where we call a balance view function
    */
   async getTokenBalance(address: string, playerModule: string): Promise<bigint> {
     try {
@@ -276,7 +275,7 @@ export class SolanaAdapter implements IBlockchainService {
             console.log(`[SOLANA] ✅ ${moduleName}: Found ${holders.length} holder(s)`);
             allHolders.push(...holders);
           }
-        } catch (error) {
+            } catch (error) {
           console.error(`[SOLANA] ❌ Error fetching holders for ${moduleName}:`, error);
           // Continue with other tokens even if one fails
         }
@@ -294,7 +293,6 @@ export class SolanaAdapter implements IBlockchainService {
 
   /**
    * Get unified holder list sourced from Boson token module
-   * Same strategy as Aptos adapter
    */
   async getBosonTokenHolders(): Promise<string[]> {
     try {
@@ -339,8 +337,8 @@ export class SolanaAdapter implements IBlockchainService {
         }
       );
 
-      const holdersWithBalances: TokenHolder[] = [];
-      
+    const holdersWithBalances: TokenHolder[] = [];
+
       for (const { account } of tokenAccounts) {
         const parsedInfo = (account.data as any).parsed?.info;
         
@@ -366,18 +364,18 @@ export class SolanaAdapter implements IBlockchainService {
             // Extract balance (already in the data!)
             const balance = BigInt(parsedInfo.tokenAmount.amount);
             
-            holdersWithBalances.push({
+        holdersWithBalances.push({
               address: owner,
-              balance,
-              formattedBalance: this.formatBalance(balance),
+          balance,
+          formattedBalance: this.formatBalance(balance),
               playerId: playerId || playerModule,
-              moduleName: playerModule,
-            });
+          moduleName: playerModule,
+        });
           }
-        }
       }
+    }
 
-      return holdersWithBalances;
+    return holdersWithBalances;
     } catch (error) {
       console.error(`[SOLANA] Error getting holders for ${playerModule}:`, error);
       return [];
@@ -426,10 +424,18 @@ export class SolanaAdapter implements IBlockchainService {
         // Try base58 format first (most common for Solana)
         const secretKey = bs58.decode(privateKeyString);
         keypair = Keypair.fromSecretKey(secretKey);
-      } catch {
+      } catch (base58Error) {
+        try {
         // Try JSON array format as fallback
+          if (privateKeyString.startsWith('[') && privateKeyString.endsWith(']')) {
         const secretKey = new Uint8Array(JSON.parse(privateKeyString));
         keypair = Keypair.fromSecretKey(secretKey);
+          } else {
+            throw new Error(`Invalid private key format. Expected base58 or JSON array. Base58 error: ${base58Error instanceof Error ? base58Error.message : 'Unknown error'}`);
+          }
+        } catch (jsonError) {
+          throw new Error(`Failed to parse private key. Base58 error: ${base58Error instanceof Error ? base58Error.message : 'Unknown'}. JSON error: ${jsonError instanceof Error ? jsonError.message : 'Unknown'}`);
+        }
       }
 
       // Get mint address from token type
@@ -455,29 +461,238 @@ export class SolanaAdapter implements IBlockchainService {
         toPublicKey
       );
 
-      // Create transfer instruction
-      const instruction = createTransferInstruction(
+      // Ensure amount is a valid bigint for the transfer instruction
+      const transferAmount = BigInt(Math.floor(amount));
+      
+      if (transferAmount <= 0n) {
+        throw new Error(`Invalid transfer amount: ${amount}. Must be greater than 0.`);
+      }
+
+      console.log(`[SOLANA] Transfer amount: ${transferAmount} (original: ${amount})`);
+      console.log(`[SOLANA] Source ATA: ${sourceATA.toBase58()}`);
+      console.log(`[SOLANA] Destination ATA: ${destATA.toBase58()}`);
+
+      // DIAGNOSTIC: Show admin wallet info and what tokens they have
+      console.log(`[SOLANA] Admin wallet address: ${keypair.publicKey.toBase58()}`);
+      console.log(`[SOLANA] Looking for Boson token account...`);
+      
+      try {
+        const adminTokenAccounts = await this.connection.getParsedTokenAccountsByOwner(
+          keypair.publicKey,
+          { programId: TOKEN_PROGRAM_ID }
+        );
+        
+        console.log(`[SOLANA] Admin wallet has ${adminTokenAccounts.value.length} token accounts:`);
+        for (const { pubkey, account } of adminTokenAccounts.value) {
+          const accountInfo = (account.data as any).parsed?.info;
+          if (accountInfo) {
+            console.log(`  - ${pubkey.toBase58()}: ${accountInfo.tokenAmount.amount} tokens (mint: ${accountInfo.mint})`);
+          }
+        }
+        
+        // Check if any token account matches the Boson mint
+        const bosonMint = mintAddress.toBase58();
+        const hasBosonTokens = adminTokenAccounts.value.some(({ account }) => {
+          const info = (account.data as any).parsed?.info;
+          return info && info.mint === bosonMint && BigInt(info.tokenAmount.amount) > 0n;
+        });
+        
+        if (!hasBosonTokens) {
+          console.log(`[SOLANA] ❌ Admin wallet has NO ${tokenType} tokens!`);
+          console.log(`[SOLANA] Expected Boson mint: ${bosonMint}`);
+          console.log(`[SOLANA] Admin needs to receive some ${tokenType} tokens before rewards can be distributed.`);
+        }
+      } catch (diagError) {
+        console.log(`[SOLANA] Could not check admin wallet tokens: ${diagError}`);
+      }
+
+      // Check if source token account exists and has sufficient balance
+      let sourceAccountInfo;
+      console.log(`[SOLANA] Checking source token account: ${sourceATA.toBase58()}`);
+      console.log(`[SOLANA] Expected mint: ${mintAddress.toBase58()}`);
+      console.log(`[SOLANA] Token type: ${tokenType}`);
+      
+      try {
+        // Try to get account with default TOKEN_PROGRAM_ID first
+        sourceAccountInfo = await getAccount(this.connection, sourceATA);
+        console.log(`[SOLANA] Found source account using TOKEN_PROGRAM_ID`);
+        const currentBalance = sourceAccountInfo.amount;
+        
+        console.log(`[SOLANA] Source account details:`);
+        console.log(`  - Address: ${sourceATA.toBase58()}`);
+        console.log(`  - Owner: ${sourceAccountInfo.owner.toBase58()}`);
+        console.log(`  - Mint: ${sourceAccountInfo.mint.toBase58()}`);
+        console.log(`  - Amount: ${currentBalance.toString()}`);
+        console.log(`  - Required: ${transferAmount.toString()}`);
+        console.log(`  - Expected Mint: ${mintAddress.toBase58()}`);
+        console.log(`  - Token Program: ${sourceAccountInfo.owner.toBase58()}`);
+        
+        // Verify mint addresses match
+        if (!sourceAccountInfo.mint.equals(mintAddress)) {
+          throw new Error(`Mint mismatch! Source account mint: ${sourceAccountInfo.mint.toBase58()}, Expected: ${mintAddress.toBase58()}`);
+        }
+        
+        if (currentBalance < transferAmount) {
+          throw new Error(`Insufficient balance. Source has ${currentBalance.toString()}, trying to transfer ${transferAmount.toString()}`);
+        }
+      } catch (accountError) {
+        console.error(`[SOLANA] Error checking source account with TOKEN_PROGRAM_ID:`, accountError);
+        
+        // Try to get account info directly to see if it exists but with different program
+        try {
+          console.log(`[SOLANA] Checking if account exists with different program...`);
+          const accountInfo = await this.connection.getAccountInfo(sourceATA);
+          
+          if (!accountInfo) {
+            throw new Error(`Source token account ${sourceATA.toBase58()} does not exist. This means the admin wallet does not have any ${tokenType} tokens. Please ensure the admin wallet has sufficient tokens for distribution.`);
+          }
+          
+          console.log(`[SOLANA] Account exists but owner is: ${accountInfo.owner.toBase58()}`);
+          console.log(`[SOLANA] Expected TOKEN_PROGRAM_ID: ${TOKEN_PROGRAM_ID.toBase58()}`);
+          console.log(`[SOLANA] Expected TOKEN_2022_PROGRAM_ID: ${TOKEN_2022_PROGRAM_ID.toBase58()}`);
+          
+          if (accountInfo.owner.equals(TOKEN_2022_PROGRAM_ID)) {
+            console.log(`[SOLANA] Account uses TOKEN_2022_PROGRAM_ID - will handle this in token program detection below`);
+            // Continue processing, we'll detect this below
+          } else {
+            throw new Error(`Source account ${sourceATA.toBase58()} has unexpected owner: ${accountInfo.owner.toBase58()}`);
+          }
+        } catch (fallbackError) {
+          console.error(`[SOLANA] Fallback check failed:`, fallbackError);
+          
+          if (accountError instanceof Error) {
+            const errorMsg = accountError.message;
+            console.error(`[SOLANA] Original error message: ${errorMsg}`);
+            
+            if (errorMsg.includes('could not find account') || errorMsg.includes('Account does not exist')) {
+              throw new Error(`Source token account ${sourceATA.toBase58()} does not exist. This means the admin wallet does not have any ${tokenType} tokens. Please ensure the admin wallet has sufficient tokens for distribution.`);
+            } else if (errorMsg.includes('Invalid account')) {
+              throw new Error(`Invalid source token account ${sourceATA.toBase58()}. This might not be a valid token account.`);
+            } else {
+              throw new Error(`Failed to check source account balance: ${errorMsg}`);
+            }
+          } else {
+            console.error(`[SOLANA] Unknown error type:`, typeof accountError, accountError);
+            throw new Error(`Failed to check source account balance: Unknown error type`);
+          }
+        }
+      }
+
+      // Check if destination token account exists, create if needed
+      let destinationAccountExists = false;
+      try {
+        await getAccount(this.connection, destATA);
+        destinationAccountExists = true;
+        console.log(`[SOLANA] Destination ATA exists: ${destATA.toBase58()}`);
+      } catch (destAccountError) {
+        if (destAccountError instanceof Error && destAccountError.message.includes('could not find account')) {
+          console.log(`[SOLANA] Destination ATA does not exist, will create it: ${destATA.toBase58()}`);
+          destinationAccountExists = false;
+        } else {
+          throw new Error(`Failed to check destination account: ${destAccountError instanceof Error ? destAccountError.message : 'Unknown error'}`);
+        }
+      }
+
+      // Create transaction instructions
+      const transaction = new Transaction();
+      
+      // Determine which token program to use based on the source account's owner
+      let tokenProgram = TOKEN_PROGRAM_ID;
+      
+      // If we have sourceAccountInfo, use that to determine the program
+      if (sourceAccountInfo && sourceAccountInfo.owner.equals(TOKEN_2022_PROGRAM_ID)) {
+        tokenProgram = TOKEN_2022_PROGRAM_ID;
+        console.log(`[SOLANA] Source account uses TOKEN_2022_PROGRAM_ID (from sourceAccountInfo)`);
+      } else if (sourceAccountInfo) {
+        console.log(`[SOLANA] Source account uses TOKEN_PROGRAM_ID (from sourceAccountInfo)`);
+      } else {
+        // If sourceAccountInfo is undefined, we need to check the account info directly
+        try {
+          const accountInfo = await this.connection.getAccountInfo(sourceATA);
+          if (accountInfo && accountInfo.owner.equals(TOKEN_2022_PROGRAM_ID)) {
+            tokenProgram = TOKEN_2022_PROGRAM_ID;
+            console.log(`[SOLANA] Source account uses TOKEN_2022_PROGRAM_ID (from getAccountInfo)`);
+          } else {
+            console.log(`[SOLANA] Source account uses TOKEN_PROGRAM_ID (from getAccountInfo)`);
+          }
+        } catch (err) {
+          console.log(`[SOLANA] Could not determine token program, defaulting to TOKEN_PROGRAM_ID`);
+        }
+      }
+
+      // Add account creation instruction if needed (using the same token program)
+      if (!destinationAccountExists) {
+        const createInstruction = createAssociatedTokenAccountInstruction(
+          keypair.publicKey, // payer
+          destATA,          // associated token account
+          toPublicKey,      // owner
+          mintAddress,      // mint
+          tokenProgram      // token program (match the source account)
+        );
+        transaction.add(createInstruction);
+        console.log(`[SOLANA] Added account creation instruction for ${destATA.toBase58()} using ${tokenProgram.toBase58()}`);
+      }
+
+      // Create transfer instruction with appropriate token program
+      const transferInstruction = createTransferInstruction(
         sourceATA,
         destATA,
         keypair.publicKey,
-        amount,
+        transferAmount,
         [],
-        TOKEN_PROGRAM_ID
+        tokenProgram
       );
-
-      // Create and send transaction
-      const transaction = new Transaction().add(instruction);
+      
+      console.log(`[SOLANA] Using token program: ${tokenProgram.toBase58()}`);
+      transaction.add(transferInstruction);
+      
+      console.log(`[SOLANA] Sending transaction to ${toAddress} for ${amount} tokens...`);
+      
+      // First try to simulate the transaction to catch issues early
+      try {
+        const simulationResult = await this.connection.simulateTransaction(transaction, [keypair]);
+        if (simulationResult.value.err) {
+          throw new Error(`Transaction simulation failed: ${JSON.stringify(simulationResult.value.err)}`);
+        }
+        console.log(`[SOLANA] Transaction simulation successful`);
+        if (simulationResult.value.logs) {
+          console.log(`[SOLANA] Simulation logs:`, simulationResult.value.logs);
+        }
+      } catch (simError) {
+        console.error(`[SOLANA] Simulation error:`, simError);
+        throw new Error(`Transaction simulation failed: ${simError instanceof Error ? simError.message : 'Unknown simulation error'}`);
+      }
+      
       const signature = await this.connection.sendTransaction(
         transaction,
         [keypair],
-        { skipPreflight: false }
+        { 
+          skipPreflight: false,
+          maxRetries: 3
+        }
       );
 
-      // Confirm transaction
-      const confirmation = await this.connection.confirmTransaction(signature, 'confirmed');
+      console.log(`[SOLANA] Transaction sent: ${signature}`);
+
+      // Confirm transaction with better error handling
+      let confirmation;
+      try {
+        confirmation = await this.connection.confirmTransaction(signature, 'confirmed');
+        console.log(`[SOLANA] Transaction confirmed: ${JSON.stringify(confirmation.value)}`);
+      } catch (confirmError) {
+        console.error(`[SOLANA] Confirmation error:`, confirmError);
+        throw new Error(`Transaction confirmation failed: ${confirmError instanceof Error ? confirmError.message : 'Unknown error'}`);
+      }
+
+      const success = !confirmation.value.err;
+      
+      if (!success) {
+        console.error(`[SOLANA] Transaction failed:`, confirmation.value.err);
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
 
       return {
-        success: !confirmation.value.err,
+        success: true,
         transactionHash: signature,
         explorerUrl: this.getExplorerUrl(signature),
       };
@@ -528,7 +743,7 @@ export class SolanaAdapter implements IBlockchainService {
    * Get network name based on RPC URL
    */
   getNetwork(): string {
-    const rpcUrl = process.env.SOLANA_RPC_URL || process.env.QUICKNODE_API_URL || '';
+    const rpcUrl = process.env.SOLANA_RPC_URL || '';
     if (rpcUrl.includes('devnet')) return 'Solana Devnet';
     if (rpcUrl.includes('testnet')) return 'Solana Testnet';
     return 'Solana Mainnet';

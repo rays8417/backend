@@ -27,7 +27,7 @@ const formatRewardResponse = (reward: any) => ({
   amount: Number(reward.amount),
   percentage: reward.percentage ? Number(reward.percentage) : null,
   status: reward.status,
-  transactionId: reward.aptosTransactionId,
+  transactionId: reward.transactionId,
   rank: reward.rank,
   createdAt: reward.createdAt,
   metadata: reward.metadata

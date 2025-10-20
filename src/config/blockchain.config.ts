@@ -11,8 +11,8 @@ export const BLOCKCHAIN_CONFIG = {
   // Network
   NETWORK: process.env.BLOCKCHAIN_NETWORK || 'testnet',
   
-  // Contract/Program address
-  CONTRACT_ADDRESS: process.env.APTOS_CONTRACT_ADDRESS || '0xaf230e3024e92da6a3a15f5a6a3f201c886891268717bf8a21157bb73a1c027b',
+  // Contract/Program address  
+  CONTRACT_ADDRESS: process.env.SOLANA_PROGRAM_ADDRESS ,
   
   // Player token modules/contracts - imported from single source
   PLAYER_MODULES: getPlayerModuleNames(),
@@ -20,7 +20,7 @@ export const BLOCKCHAIN_CONFIG = {
   // All modules including game token
   ALL_MODULES: getAllModuleNames(),
   
-  // Token decimals (8 for Aptos, 9 for Solana, 18 for Ethereum, etc.)
+  // Token decimals for Solana
   TOKEN_DECIMALS: 9,
   
   // Normalize factor for calculations

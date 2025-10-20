@@ -50,11 +50,11 @@ export interface ContractSnapshotResult {
  * Group token holders by address
  * This creates a clean structure where each address has all their holdings
  */
-function groupHoldersByAddress(aptosHolders: TokenHolderBalance[]): ContractHolder[] {
+function groupHoldersByAddress(tokenHolders: TokenHolderBalance[]): ContractHolder[] {
   
   const holdersMap = new Map<string, ContractHolder>();
   
-  for (const holder of aptosHolders) {
+  for (const holder of tokenHolders) {
     const address = holder.address;
     
     if (!holdersMap.has(address)) {
@@ -100,10 +100,7 @@ function calculateStatistics(holders: ContractHolder[]): {
   };
 }
 
-/**
- * Create a contract-only snapshot
- * This is the simplified approach that uses only Aptos contract data
- */
+
 export async function createContractSnapshot(
   tournamentId: string,
   snapshotType: 'PRE_MATCH' | 'POST_MATCH',
@@ -121,23 +118,23 @@ export async function createContractSnapshot(
       throw new Error('Tournament not found');
     }
 
-    // Step 1: Get Aptos contract data
-    console.log('[CONTRACT_SNAPSHOT] Fetching data from Aptos contract...');
-    const aptosHolders = await blockchain.getTokenHoldersWithBalances();
-    console.log('solanaHolders--------------', aptosHolders);
+    // Step 1: Get blockchain contract data
+    console.log('[CONTRACT_SNAPSHOT] Fetching data from blockchain...');
+    const tokenHolders = await blockchain.getTokenHoldersWithBalances();
+    console.log('Token Holders:', tokenHolders.length);
     const ignored = parseIgnoredAddresses();
-    const filteredAptosHolders = aptosHolders.filter(h => !ignored.has(h.address.toLowerCase()));
+    const filteredHolders = tokenHolders.filter(h => !ignored.has(h.address.toLowerCase()));
     const currentBlockNumber = await blockchain.getCurrentBlockNumber();
 
-    console.log(`[CONTRACT_SNAPSHOT] Found ${aptosHolders.length} token holders from contract`);
+    console.log(`[CONTRACT_SNAPSHOT] Found ${tokenHolders.length} token holders from blockchain`);
     if (ignored.size > 0) {
       console.log(`[CONTRACT_SNAPSHOT] Ignoring ${ignored.size} address(es) via IGNORED_HOLDER_ADDRESSES`);
-      console.log(`[CONTRACT_SNAPSHOT] Holders after ignore filter: ${filteredAptosHolders.length}`);
+      console.log(`[CONTRACT_SNAPSHOT] Holders after ignore filter: ${filteredHolders.length}`);
     }
 
     // Step 2: Group holders by address
     console.log('[CONTRACT_SNAPSHOT] Grouping holders by address...');
-    const groupedHolders = groupHoldersByAddress(filteredAptosHolders);
+    const groupedHolders = groupHoldersByAddress(filteredHolders);
 
     // Step 3: Calculate statistics
     const statistics = calculateStatistics(groupedHolders);
@@ -148,7 +145,7 @@ export async function createContractSnapshot(
       snapshotType,
       timestamp: new Date().toISOString(),
       blockNumber: currentBlockNumber.toString(),
-      contractAddress: contractAddress || process.env.APTOS_CONTRACT_ADDRESS || '0xaf230e3024e92da6a3a15f5a6a3f201c886891268717bf8a21157bb73a1c027b',
+      contractAddress: contractAddress || 'solana-program',
       
       holders: groupedHolders,
       

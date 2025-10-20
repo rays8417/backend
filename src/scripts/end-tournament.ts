@@ -154,6 +154,7 @@ async function distributeRewards(
     throw new Error('Admin credentials not configured in .env');
   }
 
+  console.log(`Blockchain: SOLANA`);
   console.log(`Admin: ${REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS}\n`);
 
   let success = 0, failed = 0, skipped = 0;
@@ -190,7 +191,7 @@ async function distributeRewards(
 
       // Send transaction using blockchain abstraction
       const result = await blockchain.transferTokens(
-        REWARD_CONFIG.ADMIN_PRIVATE_KEY,
+        REWARD_CONFIG.ADMIN_PRIVATE_KEY!,
         reward.address,
         amountInBaseUnits,
         'Boson' // Module name, adapter handles the mint address

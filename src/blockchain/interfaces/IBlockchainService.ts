@@ -1,10 +1,3 @@
-/**
- * Blockchain Service Interface
- * 
- * This interface defines all blockchain operations needed by the app.
- * Implement this interface for any blockchain (Aptos, Ethereum, Solana, etc.)
- * to make the app chain-agnostic.
- */
 
 export interface TokenHolder {
   address: string;

@@ -6,7 +6,7 @@ import {
   ContractHolder
 } from './contractSnapshotService';
 import { prisma } from '../prisma';
-import { parseIgnoredAddresses } from '../config/reward.config';
+import { parseIgnoredAddresses, REWARD_CONFIG } from '../config/reward.config';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -103,7 +103,9 @@ function calculateUserScore(
       const maintainedBalance = preBalance < postBalance ? preBalance : postBalance;
       
       // Calculate points based on MAINTAINED tokens only
-      const tokenRatio = Number(maintainedBalance) / 100000000;
+      // Use proper decimals for Solana (9 decimals)
+      const decimalMultiplier = Math.pow(10, REWARD_CONFIG.BOSON_DECIMALS);
+      const tokenRatio = Number(maintainedBalance) / decimalMultiplier;
       const weightedPoints = playerScore.fantasyPoints * tokenRatio;
       
       totalScore += weightedPoints;

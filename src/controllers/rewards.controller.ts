@@ -141,7 +141,7 @@ export const distributeSnapshotBasedRewards = async (req: Request, res: Response
     // Step 1: Calculate rewards based on snapshot data
     const rewardDistribution = await calculateRewardsFromSnapshots(tournamentId, totalRewardAmount);
 
-    // Step 2: Transfer rewards to users via Aptos
+    // Step 2: Transfer rewards to users via blockchain
     const transferResults = await transferRewardsToUsers(rewardDistribution.rewardCalculations);
 
     // Step 3: Calculate summary
@@ -173,7 +173,7 @@ export const distributeSnapshotBasedRewards = async (req: Request, res: Response
           rank: result.rank,
           amount: result.rewardAmount,
           status: 'COMPLETED',
-          aptosTransactionId: result.transactionId
+          transactionId: result.transactionId
         } as any
       });
       rewardRecords.push(userReward);
@@ -304,7 +304,7 @@ export const createRewardPool = async (req: Request, res: Response) => {
 export const processReward = async (req: Request, res: Response) => {
   try {
     const { rewardId } = req.params;
-    const { aptosTransactionId } = req.body;
+    const { transactionId } = req.body;
 
     const reward = await prisma.userReward.findUnique({
       where: { id: rewardId },
@@ -325,7 +325,7 @@ export const processReward = async (req: Request, res: Response) => {
       where: { id: rewardId },
       data: {
         status: "PROCESSING",
-        transactionId: aptosTransactionId || null,
+        transactionId: transactionId || null,
       },
     });
 
@@ -352,7 +352,7 @@ export const processReward = async (req: Request, res: Response) => {
 export const updateRewardStatus = async (req: Request, res: Response) => {
   try {
     const { rewardId } = req.params;
-    const { status, aptosTransactionId } = req.body;
+    const { status, transactionId } = req.body;
 
     if (!status || !["PENDING", "PROCESSING", "COMPLETED", "FAILED"].includes(status)) {
       return res.status(400).json({ error: "Invalid status" });
@@ -362,7 +362,7 @@ export const updateRewardStatus = async (req: Request, res: Response) => {
       where: { id: rewardId },
       data: {
         status,
-        ...(aptosTransactionId && { aptosTransactionId }),
+        ...(transactionId && { transactionId }),
       },
     });
 
@@ -421,7 +421,7 @@ export const getUserRewards = async (req: Request, res: Response) => {
         amount: reward.amount,
         percentage: reward.percentage,
         status: reward.status,
-        aptosTransactionId: reward.aptosTransactionId,
+        transactionId: reward.transactionId,
         tournament: reward.rewardPool.tournament,
         rewardPool: reward.rewardPool,
         createdAt: reward.createdAt,
