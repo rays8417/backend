@@ -136,9 +136,6 @@ export class SolanaAdapter implements IBlockchainService {
         console.error(`[SOLANA] Mint not found for player: ${playerModule}`);
         return [];
       }
-      console.log(`${playerModule} :  mintAddress--------------`, mintAddress);
-
-
       // Get all token accounts for this mint using getParsedProgramAccounts
       const tokenAccounts = await this.connection.getParsedProgramAccounts(
         TOKEN_PROGRAM_ID,
@@ -156,9 +153,6 @@ export class SolanaAdapter implements IBlockchainService {
           ],
         }
       );
-
-console.log(`${playerModule} : all tokenAccounts for the mint address --------------`, tokenAccounts);
-
 
       const holders: string[] = [];
       for (const { account } of tokenAccounts) {
@@ -189,9 +183,6 @@ console.log(`${playerModule} : all tokenAccounts for the mint address ----------
         }
       }
 
-      console.log(`${playerModule} : all holders --------------`, holders);
-
-
       // Deduplicate (each owner should have only one ATA per mint, but just in case)
       return Array.from(new Set(holders));
     } catch (error) {
@@ -221,22 +212,12 @@ console.log(`${playerModule} : all tokenAccounts for the mint address ----------
         return BigInt(0);
       }
       
-      if (playerModule === 'ShubhmanGill') {
-        console.log(`[SOLANA] 🔍 ShubhmanGill balance check:`);
-        console.log(`  - Owner: ${address}`);
-        console.log(`  - Mint: ${mintAddress.toBase58()}`);
-      }
-
       // Instead of calculating ATA, query all token accounts owned by this address for this mint
       try {
         const tokenAccounts = await this.connection.getParsedTokenAccountsByOwner(
           ownerPublicKey,
           { mint: mintAddress }
         );
-
-        if (playerModule === 'ShubhmanGill') {
-          console.log(`  - Found ${tokenAccounts.value.length} token account(s) for this mint`);
-        }
 
         if (tokenAccounts.value.length === 0) {
           return BigInt(0);
@@ -249,23 +230,11 @@ console.log(`${playerModule} : all tokenAccounts for the mint address ----------
           if (parsedInfo && parsedInfo.tokenAmount) {
             const balance = BigInt(parsedInfo.tokenAmount.amount);
             totalBalance += balance;
-            
-            if (playerModule === 'ShubhmanGill') {
-              console.log(`  - Account balance: ${balance}`);
-              console.log(`  - Account address: ${parsedInfo.address || 'unknown'}`);
-            }
           }
-        }
-
-        if (playerModule === 'ShubhmanGill') {
-          console.log(`  - ✅ Total balance: ${totalBalance}`);
         }
 
         return totalBalance;
       } catch (error) {
-        if (playerModule === 'ShubhmanGill') {
-          console.log(`  - ❌ Error querying token accounts:`, error);
-        }
         return BigInt(0);
       }
     } catch (error) {
@@ -276,90 +245,47 @@ console.log(`${playerModule} : all tokenAccounts for the mint address ----------
   /**
    * Get all token holders with balances across all players
    * 
-   * Strategy: Same as Aptos - use Boson holders as the unified holder universe,
-   * then check their balances across all player tokens
+   * OPTIMIZED Strategy: Query each player token mint directly for ALL holders
+   * This makes exactly 25 RPC calls (one per player token) regardless of user count!
+   * Excludes Boson game token - only includes actual player tokens.
+   * 
+   * Previous approach: N users × 26 tokens = 26N calls
+   * New approach: 25 player tokens = 25 calls (fixed!)
    */
   async getTokenHoldersWithBalances(): Promise<TokenHolder[]> {
     try {
-      // Step 1: Get Boson token holders (unified holder universe)
-      const bosonHolders = await this.getBosonTokenHolders();
-
-      console.log('bosonHolders--------------', bosonHolders);
-      if (bosonHolders.length === 0) {
-        console.log('[SOLANA] No Boson token holders found');
-        return [];
-      }
-
-      console.log(`[SOLANA] Found ${bosonHolders.length} Boson token holders`);
-
-      // Step 2: Get all player modules (including Boson for testing)
-      const playerModules = Array.from(this.playerMints.keys());
+      console.log('[SOLANA] Fetching token holders using optimized approach...');
       
-      console.log(`[SOLANA] Checking balances for ${bosonHolders.length} holder(s) across ${playerModules.length} tokens (including Boson)...`);
+      // Exclude Boson token - only get player tokens for snapshots
+      const playerModules = Array.from(this.playerMints.keys()).filter(m => m !== 'Boson');
+      console.log(`[SOLANA] Querying ${playerModules.length} player tokens (excludes Boson game token)...`);
       
-      const balanceTasks: Promise<{
-        address: string;
-        moduleName: string;
-        playerId: string;
-        balance: bigint;
-      } | null>[] = [];
-
-      // Step 3: For each holder, check balances across all player tokens
-      // Add delay to avoid rate limiting
-      const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      const allHolders: TokenHolder[] = [];
       
-      for (const address of bosonHolders) {
-        for (let i = 0; i < playerModules.length; i++) {
-          const moduleName = playerModules[i];
-          const index = i;
+      // For each player token, get ALL holders with balances in ONE call
+      for (let i = 0; i < playerModules.length; i++) {
+        const moduleName = playerModules[i];
+        const playerId = (i + 1).toString();
+        
+        console.log(`[SOLANA] [${i + 1}/${playerModules.length}] Fetching holders for ${moduleName}...`);
+        
+        try {
+          const holders = await this.getTokenHoldersForPlayer(moduleName, playerId);
           
-          balanceTasks.push((async () => {
-            try {
-              // Add small delay between requests to avoid rate limiting (100ms per request)
-              await delay(i * 100);
-              
-              const balance = await this.getTokenBalance(address, moduleName);
-              
-              // Debug logging for all modules
-              if (balance > 0n) {
-                console.log(`[SOLANA] ✅ Found: ${moduleName} balance ${balance} for ${address}`);
-              } else if (moduleName === 'ShubhmanGill') {
-                console.log(`[SOLANA] ❌ ShubhmanGill: balance is 0 for ${address}`);
-              }
-              
-              if (balance > 0n) {
-                return { 
-                  address, 
-                  moduleName, 
-                  playerId: (index + 1).toString(), 
-                  balance 
-                };
-              }
-              return null;
-            } catch (error) {
-              console.error(`[SOLANA] Balance fetch failed for ${address} in ${moduleName}:`, error);
-              return null;
-            }
-          })());
+          if (holders.length > 0) {
+            console.log(`[SOLANA] ✅ ${moduleName}: Found ${holders.length} holder(s)`);
+            allHolders.push(...holders);
+          }
+        } catch (error) {
+          console.error(`[SOLANA] ❌ Error fetching holders for ${moduleName}:`, error);
+          // Continue with other tokens even if one fails
         }
       }
 
-      const results = await Promise.allSettled(balanceTasks);
+      console.log(`[SOLANA] ✅ Total: Found ${allHolders.length} token holdings across ${playerModules.length} tokens`);
+      console.log(`[SOLANA] RPC calls made: ${playerModules.length} (fixed cost, regardless of user count)`);
       
-      const balances: TokenHolder[] = results
-        .filter((r): r is PromiseFulfilledResult<{ address: string; moduleName: string; playerId: string; balance: bigint } | null> => r.status === 'fulfilled')
-        .map(r => r.value)
-        .filter((v): v is { address: string; moduleName: string; playerId: string; balance: bigint } => v !== null)
-        .map(v => ({
-          address: v.address,
-          balance: v.balance,
-          formattedBalance: this.formatBalance(v.balance),
-          playerId: v.playerId,
-          moduleName: v.moduleName,
-        }));
-
-      console.log(`[SOLANA] Found ${balances.length} total token holdings across all modules`);
-      return balances;
+      return allHolders;
     } catch (error) {
       console.error('[SOLANA] Error in getTokenHoldersWithBalances:', error);
       throw new Error(`Failed to get token holders with balances: ${error}`);
@@ -385,34 +311,85 @@ console.log(`${playerModule} : all tokenAccounts for the mint address ----------
 
   /**
    * Get token holders for specific player with balances
+   * OPTIMIZED: Gets holders and balances in a SINGLE RPC call
    */
-  async getTokenHoldersForPlayer(playerModule: string): Promise<TokenHolder[]> {
-    const holders = await this.getTokenHolders(playerModule);
-    const holdersWithBalances: TokenHolder[] = [];
-
-    for (const holderAddress of holders) {
-      const balance = await this.getTokenBalance(holderAddress, playerModule);
-
-      if (balance > BigInt(0)) {
-        holdersWithBalances.push({
-          address: holderAddress,
-          balance,
-          formattedBalance: this.formatBalance(balance),
-          playerId: playerModule,
-          moduleName: playerModule,
-        });
+  async getTokenHoldersForPlayer(playerModule: string, playerId?: string): Promise<TokenHolder[]> {
+    try {
+      const mintAddress = this.playerMints.get(playerModule);
+      if (!mintAddress) {
+        console.error(`[SOLANA] Mint not found for player: ${playerModule}`);
+        return [];
       }
-    }
 
-    return holdersWithBalances;
+      // Get all token accounts for this mint - this returns holders WITH balances!
+      const tokenAccounts = await this.connection.getParsedProgramAccounts(
+        TOKEN_PROGRAM_ID,
+        {
+          filters: [
+            {
+              dataSize: 165, // Size of SPL Token account
+            },
+            {
+              memcmp: {
+                offset: 0, // Mint address is at offset 0
+                bytes: mintAddress.toBase58(),
+              },
+            },
+          ],
+        }
+      );
+
+      const holdersWithBalances: TokenHolder[] = [];
+      
+      for (const { account } of tokenAccounts) {
+        const parsedInfo = (account.data as any).parsed?.info;
+        
+        if (parsedInfo) {
+          const hasBalance = parsedInfo.tokenAmount.uiAmount > 0 || parsedInfo.tokenAmount.amount > 0;
+          
+          if (hasBalance) {
+            const owner = parsedInfo.owner;
+            
+            // Filter out ignored addresses (pool, AMM, etc.)
+            if (IGNORED_ADDRESS_SET.has(owner.toLowerCase())) {
+              continue;
+            }
+            
+            // Validate address format
+            try {
+              new PublicKey(owner);
+            } catch (err) {
+              console.error(`[SOLANA] Invalid address format: ${owner}`);
+              continue;
+            }
+            
+            // Extract balance (already in the data!)
+            const balance = BigInt(parsedInfo.tokenAmount.amount);
+            
+            holdersWithBalances.push({
+              address: owner,
+              balance,
+              formattedBalance: this.formatBalance(balance),
+              playerId: playerId || playerModule,
+              moduleName: playerModule,
+            });
+          }
+        }
+      }
+
+      return holdersWithBalances;
+    } catch (error) {
+      console.error(`[SOLANA] Error getting holders for ${playerModule}:`, error);
+      return [];
+    }
   }
 
   /**
-   * Get balance for address across all player tokens (including Boson for testing)
+   * Get balance for address across all player tokens (excludes Boson game token)
    */
   async getBalanceForAllPlayers(address: string): Promise<TokenHolder[]> {
     const balances: TokenHolder[] = [];
-    const playerModules = Array.from(this.playerMints.keys());
+    const playerModules = Array.from(this.playerMints.keys()).filter(m => m !== 'Boson');
 
     for (const moduleName of playerModules) {
       const balance = await this.getTokenBalance(address, moduleName);
