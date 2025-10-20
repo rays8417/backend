@@ -13,6 +13,8 @@ import userRewardsRoutes from './routes/user-rewards';
 import usersRoutes from './routes/users';
 import solanaRoutes from './routes/solana';
 import liveScoresRoutes from './routes/live-scores';
+import packsRoutes from './routes/packs';
+import { createContractEventService } from './services/contractEventService';
 
 // Load environment variables
 dotenv.config();
@@ -41,6 +43,7 @@ app.use('/api/user-rewards', userRewardsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/solana', solanaRoutes);
 app.use('/api/live-scores', liveScoresRoutes);
+app.use('/api/packs', packsRoutes);
 
 // Error handling middleware
 app.use(
@@ -61,7 +64,17 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Cricket Fantasy API running on port ${PORT}`);
+  
+  // Start contract event listening for pack purchases
+  try {
+    const contractEventService = createContractEventService();
+    await contractEventService.startListening();
+    console.log(`🔍 Contract event listening started for: ${contractEventService.getContractAddress()}`);
+  } catch (error) {
+    console.error('❌ Failed to start contract event listening:', error);
+    console.log('📝 Make sure PACK_PURCHASE_CONTRACT_ADDRESS is set in environment variables');
+  }
 });
 

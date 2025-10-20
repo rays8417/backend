@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../prisma';
-import { solanaAdapter } from '../blockchain/adapters/solana.adapter';
-import { getPlayerModuleNames } from '../config/players.config';
 import { REWARD_CONFIG } from '../config/reward.config';
+import { distributeRandomPlayerTokens } from '../utils/playerTokenDistribution';
 
 /**
  * Send starter tokens to new users
@@ -19,90 +18,8 @@ const sendStarterTokens = async (address: string): Promise<void> => {
       return;
     }
 
-    // 1. Generate random number of player tokens (2-5)
-    const numPlayers = Math.floor(Math.random() * 4) + 2; // Random between 2-5
-    console.log(`[STARTER TOKENS] Selected ${numPlayers} random players`);
-    
-    // 2. Get all player modules and randomly select
-    const allPlayers = getPlayerModuleNames();
-    const shuffled = allPlayers.sort(() => Math.random() - 0.5);
-    const selectedPlayers = shuffled.slice(0, numPlayers);
-    console.log(`[STARTER TOKENS] Selected players:`, selectedPlayers);
-    
-    // 3. Calculate shares for each player token
-    // Total value should equal 20 bosons
-    const totalBosonValue = 20;
-    const bosonDecimals = REWARD_CONFIG.BOSON_DECIMALS;
-    const multiplier = Math.pow(10, bosonDecimals);
-    
-    // Generate random weights for each player
-    const weights: number[] = [];
-    let totalWeight = 0;
-    
-    for (let i = 0; i < numPlayers; i++) {
-      // Generate random weight between 0.5 and 2.0 for variety
-      const weight = Math.random() * 1.5 + 0.5;
-      weights.push(weight);
-      totalWeight += weight;
-    }
-    
-    // Normalize weights so they sum to totalBosonValue
-    const normalizedValues = weights.map(w => (w / totalWeight) * totalBosonValue);
-    
-    console.log(`[STARTER TOKENS] Distribution:`);
-    selectedPlayers.forEach((player, i) => {
-      console.log(`  - ${player}: ${normalizedValues[i].toFixed(3)} bosons`);
-    });
-    
-    // 4. Send tokens to user
-    const transferResults = [];
-    
-    for (let i = 0; i < selectedPlayers.length; i++) {
-      const playerModule = selectedPlayers[i];
-      const bosonAmount = normalizedValues[i];
-      const tokenAmount = Math.floor(bosonAmount * multiplier);
-      
-      console.log(`[STARTER TOKENS] Transferring ${bosonAmount.toFixed(3)} bosons (${tokenAmount} tokens) of ${playerModule} to ${address}`);
-      
-      try {
-        const result = await solanaAdapter.transferTokens(
-          adminPrivateKey,
-          address,
-          tokenAmount,
-          playerModule
-        );
-        
-        if (result.success) {
-          console.log(`[STARTER TOKENS] ✅ Successfully sent ${playerModule}: ${result.transactionHash}`);
-          transferResults.push({
-            player: playerModule,
-            amount: bosonAmount,
-            success: true,
-            txHash: result.transactionHash,
-          });
-        } else {
-          console.error(`[STARTER TOKENS] ❌ Failed to send ${playerModule}: ${result.error}`);
-          transferResults.push({
-            player: playerModule,
-            amount: bosonAmount,
-            success: false,
-            error: result.error,
-          });
-        }
-      } catch (transferError) {
-        console.error(`[STARTER TOKENS] ❌ Error transferring ${playerModule}:`, transferError);
-        transferResults.push({
-          player: playerModule,
-          amount: bosonAmount,
-          success: false,
-          error: transferError instanceof Error ? transferError.message : 'Unknown error',
-        });
-      }
-    }
-    
-    // Log summary
-    const successCount = transferResults.filter(r => r.success).length;
-    console.log(`[STARTER TOKENS] Transfer complete: ${successCount}/${numPlayers} successful`);
+    // Use the reusable utility to distribute 20 bosons worth of player tokens
+    await distributeRandomPlayerTokens(address, 20, adminPrivateKey);
     
   } catch (error) {
     console.error('[STARTER TOKENS] Error in sendStarterTokens:', error);
