@@ -705,14 +705,56 @@ export class SolanaAdapter implements IBlockchainService {
         throw new Error(`Failed to send transaction: ${sendError instanceof Error ? sendError.message : 'Unknown send error'}`);
       }
 
-      // Confirm transaction with better error handling
+      // Confirm transaction with retry logic and status checking
       let confirmation;
-      try {
-        confirmation = await this.connection.confirmTransaction(signature, 'confirmed');
-        console.log(`[SOLANA] Transaction confirmed: ${JSON.stringify(confirmation.value)}`);
-      } catch (confirmError) {
-        console.error(`[SOLANA] Confirmation error:`, confirmError);
-        throw new Error(`Transaction confirmation failed: ${confirmError instanceof Error ? confirmError.message : 'Unknown confirmation error'}`);
+      let retries = 0;
+      const maxRetries = 3;
+      
+      while (retries < maxRetries) {
+        try {
+          // Use finalized commitment for more reliable confirmation, but with timeout
+          const confirmPromise = this.connection.confirmTransaction(signature, 'confirmed');
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Confirmation timeout')), 60000) // 60s timeout
+          );
+          
+          confirmation = await Promise.race([confirmPromise, timeoutPromise]) as any;
+          console.log(`[SOLANA] Transaction confirmed: ${JSON.stringify(confirmation.value)}`);
+          break;
+        } catch (confirmError) {
+          console.error(`[SOLANA] Confirmation attempt ${retries + 1} error:`, confirmError);
+          
+          // Check if transaction actually succeeded by fetching it
+          try {
+            const status = await this.connection.getSignatureStatus(signature);
+            if (status?.value?.confirmationStatus === 'confirmed' || status?.value?.confirmationStatus === 'finalized') {
+              console.log(`[SOLANA] Transaction found on-chain with status: ${status.value.confirmationStatus}`);
+              confirmation = { value: { err: status.value.err } };
+              break;
+            }
+          } catch (statusError) {
+            console.error(`[SOLANA] Error checking transaction status:`, statusError);
+          }
+          
+          retries++;
+          if (retries >= maxRetries) {
+            // Last resort: check one more time if transaction is on-chain
+            try {
+              const finalStatus = await this.connection.getSignatureStatus(signature);
+              if (finalStatus?.value) {
+                console.log(`[SOLANA] Transaction found after retries:`, finalStatus.value);
+                confirmation = { value: { err: finalStatus.value.err } };
+                break;
+              }
+            } catch (e) {
+              // Transaction truly failed or wasn't included
+            }
+            throw new Error(`Transaction confirmation failed after ${maxRetries} retries: ${confirmError instanceof Error ? confirmError.message : 'Unknown confirmation error'}`);
+          }
+          
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
 
       const success = !confirmation.value.err;
@@ -747,6 +789,84 @@ export class SolanaAdapter implements IBlockchainService {
         error: errorMessage,
       };
     }
+  }
+
+  /**
+   * Batch transfer tokens to multiple recipients
+   * More efficient than sequential transfers - processes multiple transfers in parallel
+   * 
+   * @param privateKeyString - Admin private key
+   * @param transfers - Array of {address, amount} objects
+   * @param moduleName - Token module name (e.g., 'Boson')
+   * @param batchSize - Number of parallel transfers (default: 5)
+   */
+  async batchTransferTokens(
+    privateKeyString: string,
+    transfers: Array<{ address: string; amount: number }>,
+    moduleName: string,
+    batchSize: number = 5
+  ): Promise<Array<TransferResult & { address: string }>> {
+    console.log(`\n[SOLANA] Starting batch transfer of ${transfers.length} transfers in batches of ${batchSize}`);
+    
+    const results: Array<TransferResult & { address: string }> = [];
+    
+    // Process in batches to avoid overwhelming the RPC
+    for (let i = 0; i < transfers.length; i += batchSize) {
+      const batch = transfers.slice(i, i + batchSize);
+      console.log(`\n[SOLANA] Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(transfers.length / batchSize)} (${batch.length} transfers)`);
+      
+      // Execute transfers in parallel within the batch
+      const batchPromises = batch.map(async (transfer) => {
+        try {
+          const result = await this.transferTokens(
+            privateKeyString,
+            transfer.address,
+            transfer.amount,
+            moduleName
+          );
+          return { ...result, address: transfer.address };
+        } catch (error) {
+          console.error(`[SOLANA] Batch transfer failed for ${transfer.address}:`, error);
+          return {
+            success: false,
+            transactionHash: '',
+            explorerUrl: '',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            address: transfer.address
+          };
+        }
+      });
+      
+      const batchResults = await Promise.allSettled(batchPromises);
+      
+      // Extract results from settled promises
+      for (const result of batchResults) {
+        if (result.status === 'fulfilled') {
+          results.push(result.value);
+        } else {
+          console.error(`[SOLANA] Batch promise rejected:`, result.reason);
+          results.push({
+            success: false,
+            transactionHash: '',
+            explorerUrl: '',
+            error: result.reason instanceof Error ? result.reason.message : 'Promise rejected',
+            address: 'unknown'
+          });
+        }
+      }
+      
+      // Small delay between batches to avoid rate limiting
+      if (i + batchSize < transfers.length) {
+        console.log(`[SOLANA] Waiting 2s before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+    
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
+    console.log(`\n[SOLANA] Batch transfer complete: ${successCount} succeeded, ${failCount} failed`);
+    
+    return results;
   }
 
   /**

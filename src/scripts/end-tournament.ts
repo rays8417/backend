@@ -147,8 +147,8 @@ async function distributeRewards(
   rewardPoolId: string,
   rewardCalculations: RewardCalculation[]
 ) {
-  console.log(`\n🚚 DISTRIBUTING REWARDS ON-CHAIN`);
-  console.log('=================================\n');
+  console.log(`\n🚚 DISTRIBUTING REWARDS ON-CHAIN (BATCH MODE)`);
+  console.log('===========================================\n');
 
   if (!REWARD_CONFIG.ADMIN_PRIVATE_KEY || !REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS) {
     throw new Error('Admin credentials not configured in .env');
@@ -160,118 +160,197 @@ async function distributeRewards(
   let success = 0, failed = 0, skipped = 0;
   let totalDistributed = 0;
 
+  // Filter and prepare transfers
+  const validTransfers: Array<{
+    reward: typeof rewardCalculations[0];
+    amountInBaseUnits: number;
+  }> = [];
+  
   for (const reward of rewardCalculations) {
-    try {
-      // Skip if trying to send to admin wallet (self-transfer prevention)
-      if (reward.address === REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS) {
-        console.log(`⏭️  Skip: ${reward.address.slice(0, 12)}... (admin wallet cannot receive rewards)`);
-        
-        // Save skipped reward to database
-        await prisma.userReward.create({
-          data: {
-            address: reward.address,
-            rewardPoolId,
-            amount: reward.rewardAmount,
-            status: 'PENDING',
-            metadata: {
-              totalScore: reward.totalScore,
-              totalTokens: reward.totalTokens,
-              holdings: reward.holdings,
-              reason: 'Admin wallet cannot receive rewards'
-            }
-          }
-        });
-        
-        skipped++;
-        continue;
-      }
-
-      if (reward.rewardAmount < REWARD_CONFIG.MIN_REWARD_AMOUNT) {
-        console.log(`⏭️  Skip: ${reward.address.slice(0, 12)}... (too small)`);
-        
-        // Save skipped reward to database
-        await prisma.userReward.create({
-          data: {
-            address: reward.address,
-            rewardPoolId,
-            amount: reward.rewardAmount,
-            status: 'PENDING',
-            metadata: {
-              totalScore: reward.totalScore,
-              totalTokens: reward.totalTokens,
-              holdings: reward.holdings,
-              reason: 'Amount below minimum threshold'
-            }
-          }
-        });
-        
-        skipped++;
-        continue;
-      }
-
-      const amountInBaseUnits = Math.floor(reward.rewardAmount * Math.pow(10, REWARD_CONFIG.BOSON_DECIMALS));
-
-      console.log(`💸 ${reward.address.slice(0, 12)}... → ${reward.rewardAmount} BOSON`);
-
-      // Send transaction using blockchain abstraction
-      const result = await blockchain.transferTokens(
-        REWARD_CONFIG.ADMIN_PRIVATE_KEY!,
-        reward.address,
-        amountInBaseUnits,
-        'Boson' // Module name, adapter handles the mint address
-      );
-
-      if (!result.success) {
-        throw new Error(result.error || 'Transaction failed');
-      }
-
-      console.log(`   ✅ TX: ${result.transactionHash}\n`);
+    // Skip if trying to send to admin wallet (self-transfer prevention)
+    if (reward.address === REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS) {
+      console.log(`⏭️  Skip: ${reward.address.slice(0, 12)}... (admin wallet cannot receive rewards)`);
       
-      // Small delay to prevent rate limiting (only after successful transactions)
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Save successful reward to database
+      // Save skipped reward to database
       await prisma.userReward.create({
         data: {
           address: reward.address,
           rewardPoolId,
           amount: reward.rewardAmount,
-          status: 'COMPLETED',
-          transactionId: result.transactionHash,
+          status: 'PENDING',
           metadata: {
             totalScore: reward.totalScore,
             totalTokens: reward.totalTokens,
             holdings: reward.holdings,
-            eligibility: reward.eligibility
+            reason: 'Admin wallet cannot receive rewards'
           }
         }
       });
-
-      success++;
-      totalDistributed += reward.rewardAmount;
-    } catch (error) {
-      console.log(`   ❌ Failed: ${error}\n`);
       
-      // Save failed reward to database
+      skipped++;
+      continue;
+    }
+
+    if (reward.rewardAmount < REWARD_CONFIG.MIN_REWARD_AMOUNT) {
+      console.log(`⏭️  Skip: ${reward.address.slice(0, 12)}... (too small)`);
+      
+      // Save skipped reward to database
       await prisma.userReward.create({
         data: {
           address: reward.address,
           rewardPoolId,
           amount: reward.rewardAmount,
-          status: 'FAILED',
+          status: 'PENDING',
           metadata: {
             totalScore: reward.totalScore,
             totalTokens: reward.totalTokens,
             holdings: reward.holdings,
-            error: error instanceof Error ? error.message : String(error)
+            reason: 'Amount below minimum threshold'
           }
         }
       });
       
-      // Small delay after failures too to prevent rapid-fire errors
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      failed++;
+      skipped++;
+      continue;
+    }
+
+    const amountInBaseUnits = Math.floor(reward.rewardAmount * Math.pow(10, REWARD_CONFIG.BOSON_DECIMALS));
+    validTransfers.push({ reward, amountInBaseUnits });
+  }
+
+  console.log(`\n📦 Processing ${validTransfers.length} transfers in parallel batches...`);
+
+  // Check if blockchain adapter supports batch transfers (Solana does)
+  if (typeof (blockchain as any).batchTransferTokens === 'function') {
+    const transfers = validTransfers.map(t => ({
+      address: t.reward.address,
+      amount: t.amountInBaseUnits
+    }));
+
+    const batchResults = await (blockchain as any).batchTransferTokens(
+      REWARD_CONFIG.ADMIN_PRIVATE_KEY!,
+      transfers,
+      'Boson',
+      5 // Process 5 transfers in parallel
+    );
+
+    // Process results and save to database
+    for (let i = 0; i < batchResults.length; i++) {
+      const result = batchResults[i];
+      const { reward } = validTransfers[i];
+
+      if (result.success) {
+        console.log(`✅ ${reward.address.slice(0, 12)}... → ${reward.rewardAmount} BOSON (TX: ${result.transactionHash.slice(0, 8)}...)`);
+        
+        // Save successful reward to database
+        await prisma.userReward.create({
+          data: {
+            address: reward.address,
+            rewardPoolId,
+            amount: reward.rewardAmount,
+            status: 'COMPLETED',
+            transactionId: result.transactionHash,
+            metadata: {
+              totalScore: reward.totalScore,
+              totalTokens: reward.totalTokens,
+              holdings: reward.holdings,
+              eligibility: reward.eligibility
+            }
+          }
+        });
+
+        success++;
+        totalDistributed += reward.rewardAmount;
+      } else {
+        console.log(`❌ ${reward.address.slice(0, 12)}... → ${reward.rewardAmount} BOSON (Error: ${result.error})`);
+        
+        // Save failed reward to database
+        await prisma.userReward.create({
+          data: {
+            address: reward.address,
+            rewardPoolId,
+            amount: reward.rewardAmount,
+            status: 'FAILED',
+            metadata: {
+              totalScore: reward.totalScore,
+              totalTokens: reward.totalTokens,
+              holdings: reward.holdings,
+              error: result.error || 'Unknown error'
+            }
+          }
+        });
+
+        failed++;
+      }
+    }
+  } else {
+    // Fallback to sequential processing if batch not supported
+    console.log(`⚠️  Batch transfer not supported, using sequential processing...`);
+    
+    for (const { reward, amountInBaseUnits } of validTransfers) {
+      try {
+        console.log(`💸 ${reward.address.slice(0, 12)}... → ${reward.rewardAmount} BOSON`);
+
+        // Send transaction using blockchain abstraction
+        const result = await blockchain.transferTokens(
+          REWARD_CONFIG.ADMIN_PRIVATE_KEY!,
+          reward.address,
+          amountInBaseUnits,
+          'Boson'
+        );
+
+        if (!result.success) {
+          throw new Error(result.error || 'Transaction failed');
+        }
+
+        console.log(`   ✅ TX: ${result.transactionHash}\n`);
+        
+        // Save successful reward to database
+        await prisma.userReward.create({
+          data: {
+            address: reward.address,
+            rewardPoolId,
+            amount: reward.rewardAmount,
+            status: 'COMPLETED',
+            transactionId: result.transactionHash,
+            metadata: {
+              totalScore: reward.totalScore,
+              totalTokens: reward.totalTokens,
+              holdings: reward.holdings,
+              eligibility: reward.eligibility
+            }
+          }
+        });
+
+        success++;
+        totalDistributed += reward.rewardAmount;
+        
+        // Small delay to prevent rate limiting
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        console.log(`   ❌ Failed: ${error}\n`);
+        
+        // Save failed reward to database
+        await prisma.userReward.create({
+          data: {
+            address: reward.address,
+            rewardPoolId,
+            amount: reward.rewardAmount,
+            status: 'FAILED',
+            metadata: {
+              totalScore: reward.totalScore,
+              totalTokens: reward.totalTokens,
+              holdings: reward.holdings,
+              error: error instanceof Error ? error.message : String(error)
+            }
+          }
+        });
+        
+        // Small delay after failures too to prevent rapid-fire errors
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        failed++;
+      }
     }
   }
 
