@@ -27,7 +27,7 @@ export const getPackTypes = async (req: Request, res: Response) => {
         name: pack.name,
         price: pack.price,
         description: pack.description,
-        playerCount: '2-5 random players',
+        playerCount: '4-7 random players',
         valueInBosons: pack.price
       }))
     });
@@ -38,8 +38,9 @@ export const getPackTypes = async (req: Request, res: Response) => {
 };
 
 /**
- * POST /api/packs/purchase
- * Handle pack purchase when user transfers bosons
+ * Internal function to handle pack purchase
+ * Called by ContractEventService when contract emits pack purchase event
+ * Note: This is not exposed as a direct API endpoint
  */
 export const purchasePack = async (req: Request, res: Response) => {
   try {
@@ -139,136 +140,3 @@ export const purchasePack = async (req: Request, res: Response) => {
   }
 };
 
-/**
- * POST /api/packs/detect-transfer
- * Endpoint to detect boson transfers and automatically process pack purchases
- * This would typically be called by a webhook or monitoring service
- */
-export const detectBosonTransfer = async (req: Request, res: Response) => {
-  try {
-    const { 
-      fromAddress, 
-      toAddress, 
-      amount, 
-      transactionHash, 
-      tokenType = 'Boson' 
-    } = req.body;
-
-    if (!fromAddress || !toAddress || !amount || !transactionHash) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: fromAddress, toAddress, amount, transactionHash' 
-      });
-    }
-
-    // Only process if it's a Boson token transfer to admin address
-    const adminAddress = REWARD_CONFIG.ADMIN_ACCOUNT_ADDRESS;
-    if (tokenType !== 'Boson' || toAddress.toLowerCase() !== adminAddress?.toLowerCase()) {
-      return res.status(200).json({ 
-        message: 'Transfer not for pack purchase - ignoring',
-        processed: false 
-      });
-    }
-
-    // Check if amount matches any pack price
-    const validPackAmounts = Object.values(PackType).filter(v => typeof v === 'number') as number[];
-    if (!validPackAmounts.includes(amount)) {
-      return res.status(400).json({ 
-        error: `Amount ${amount} does not match any pack price. Valid amounts: ${validPackAmounts.join(', ')} bosons` 
-      });
-    }
-
-    console.log(`[BOSON TRANSFER] Detected ${amount} boson transfer from ${fromAddress} to admin`);
-    console.log(`[BOSON TRANSFER] Processing as pack purchase...`);
-
-    // Process as pack purchase
-    const packType = amount as PackType;
-    const result = await purchasePack({
-      body: {
-        userAddress: fromAddress,
-        packType,
-        bosonAmount: amount,
-        transactionHash
-      }
-    } as Request, res);
-
-    return result;
-
-  } catch (error) {
-    console.error('[BOSON TRANSFER] Error detecting boson transfer:', error);
-    res.status(500).json({ 
-      error: 'Failed to detect and process boson transfer',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-};
-
-/**
- * POST /api/packs/trigger-from-event
- * Manually trigger pack purchase from contract event data
- */
-export const triggerFromEvent = async (req: Request, res: Response) => {
-  try {
-    const { fromAddress, amount, transactionSignature } = req.body;
-
-    if (!fromAddress || !amount || !transactionSignature) {
-      return res.status(400).json({ 
-        error: 'Missing required fields: fromAddress, amount, transactionSignature' 
-      });
-    }
-
-    // Validate amount
-    const validPackAmounts = Object.values(PackType).filter(v => typeof v === 'number') as number[];
-    if (!validPackAmounts.includes(amount)) {
-      return res.status(400).json({ 
-        error: `Amount ${amount} does not match any pack price. Valid amounts: ${validPackAmounts.join(', ')} bosons` 
-      });
-    }
-
-    console.log(`[TRIGGER_EVENT] Manually triggering pack purchase from event:`, {
-      fromAddress,
-      amount,
-      transactionSignature
-    });
-
-    // Create request object for purchasePack
-    const mockReq = {
-      body: {
-        userAddress: fromAddress,
-        packType: amount as PackType,
-        bosonAmount: amount,
-        transactionHash: transactionSignature
-      }
-    } as Request;
-
-    // Create response handler
-    let responseData: any = null;
-    const mockRes = {
-      json: (data: any) => {
-        responseData = data;
-        return mockRes;
-      },
-      status: (code: number) => ({
-        json: (data: any) => {
-          responseData = { ...data, statusCode: code };
-          return mockRes;
-        }
-      })
-    } as Response;
-
-    await purchasePack(mockReq, mockRes);
-
-    res.json({
-      success: true,
-      message: 'Pack purchase triggered from contract event',
-      eventData: { fromAddress, amount, transactionSignature },
-      result: responseData
-    });
-
-  } catch (error) {
-    console.error('[TRIGGER_EVENT] Error triggering pack purchase from event:', error);
-    res.status(500).json({ 
-      error: 'Failed to trigger pack purchase from event',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-};

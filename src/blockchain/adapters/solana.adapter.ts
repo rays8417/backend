@@ -28,7 +28,7 @@ dotenv.config();
 // Player token mints configuration - maps player module names to Solana mint addresses
 const PLAYER_TOKEN_MINTS: Record<string, string> = {
   'Boson': 'HtnUp4FXaKC7MvpWP2N8W25rea75XspMiiw3XEixE8Jd',
-  'ShubhmanGill': 'E4ixLqAcjioCVTBhW9VQxpCFHhJFnwyMVYTZJyzWQaar',
+  'ShubhmanGill': 'Az2cZgMbBUorGDZe9EUUx2pxzCenmzC3iEysqz31Ma8a',
   'BenStokes': '5qBqQyobhK9rMYcK5PnwmWUY2GYpuVeqHfPpu4mAJ3rD',
   'TravisHead': '2yqdx8tQukCHHJiCUsNKGq1mXA9BEmkxSGiouE3u9SSV',
   'GlenMaxwell': '6mWJRGNUnjbvoqVmP5UoPRYUK7t4zrBiUY4pHBKrbuK8',

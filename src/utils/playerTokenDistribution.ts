@@ -25,8 +25,8 @@ export const distributeRandomPlayerTokens = async (
   try {
     console.log(`[PLAYER PACK] Distributing ${totalBosonValue} bosons worth of player tokens to: ${address}`);
 
-    // 1. Generate random number of player tokens (2-5)
-    const numPlayers = Math.floor(Math.random() * 4) + 2; // Random between 2-5
+    // 1. Generate random number of player tokens (4-7)
+    const numPlayers = Math.floor(Math.random() * 4) + 4; // Random between 4-7
     console.log(`[PLAYER PACK] Selected ${numPlayers} random players`);
 
     // 2. Get all player modules and randomly select
@@ -119,9 +119,9 @@ export const distributeRandomPlayerTokens = async (
  * Pack types available for purchase
  */
 export enum PackType {
-  BASIC = 20,
-  PREMIUM = 40,
-  ELITE = 60
+  BASE = 20,
+  PRIME = 50,
+  ULTRA = 100
 }
 
 export interface PackInfo {
@@ -133,21 +133,21 @@ export interface PackInfo {
 
 export const PACK_TYPES: PackInfo[] = [
   {
-    type: PackType.BASIC,
-    name: 'Basic Pack',
+    type: PackType.BASE,
+    name: 'BASE Pack',
     price: 20,
-    description: 'Random 2-5 player tokens worth 20 bosons'
+    description: 'Random 4-7 player tokens worth 20 bosons'
   },
   {
-    type: PackType.PREMIUM,
-    name: 'Premium Pack',
-    price: 40,
-    description: 'Random 2-5 player tokens worth 40 bosons'
+    type: PackType.PRIME,
+    name: 'PRIME Pack',
+    price: 50,
+    description: 'Random 4-7 player tokens worth 50 bosons'
   },
   {
-    type: PackType.ELITE,
-    name: 'Elite Pack',
-    price: 60,
-    description: 'Random 2-5 player tokens worth 60 bosons'
+    type: PackType.ULTRA,
+    name: 'ULTRA Pack',
+    price: 100,
+    description: 'Random 4-7 player tokens worth 100 bosons'
   }
 ];
