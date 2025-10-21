@@ -116,68 +116,53 @@ export class ContractEventService {
 
   /**
    * Parse contract event from program logs
-   * This needs to be customized based on your contract's log format
+   * Contract log format: "Program log: Deposited {amount} tokens from {address}"
+   * Example: "Program log: Deposited 100000 tokens from 2rGhvAWYnCKzKcmVxpnZ2Zpo6MirgbBHBYz2rYdykXBC"
    */
   private parseContractEvent(logs: Logs, slot: number): ContractEvent | null {
     try {
-      // Validate amount matches pack prices
+      // Valid pack prices in bosons (20, 50, 100)
       const validAmounts = Object.values(PackType).filter(v => typeof v === 'number') as number[];
-
-      // Your contract should emit logs like:
-      // "Program log: PackPurchase|{fromAddress}|{amount}"
-      // or similar format that you can parse
 
       const logMessages = logs.logs || [];
       
       for (const message of logMessages) {
-        // Example parsing - customize this based on your contract's actual log format
-        if (typeof message === 'string' && message.includes('PackPurchase')) {
-          console.log(`[CONTRACT_EVENT] Found pack purchase log: ${message}`);
+        if (typeof message === 'string' && message.includes('Program log: Deposited')) {
+          console.log(`[CONTRACT_EVENT] Found deposit log: ${message}`);
           
-          // Parse the log message - customize this based on your contract format
-          const parts = message.split('|');
-          if (parts.length >= 3) {
-            const fromAddress = parts[1];
-            const amount = parseFloat(parts[2]);
+          // Parse: "Program log: Deposited {amount} tokens from {address}"
+          // Example: "Program log: Deposited 100000 tokens from 2rGhvAWYnCKzKcmVxpnZ2Zpo6MirgbBHBYz2rYdykXBC"
+          const regex = /Program log: Deposited (\d+) tokens from (\S+)/;
+          const match = message.match(regex);
+          
+          if (match && match.length >= 3) {
+            const tokenAmount = parseInt(match[1]); // e.g., 100000
+            const fromAddress = match[2]; // e.g., "2rGhvAWYnCKzKcmVxpnZ2Zpo6MirgbBHBYz2rYdykXBC"
             
-            // Validate amount matches pack prices (validAmounts is declared above)
-            if (validAmounts.includes(amount)) {
+            // Convert token amount to bosons using configured decimals
+            // Example: 100000 tokens with 3 decimals = 100 bosons (100000 / 10^3)
+            const divisor = Math.pow(10, REWARD_CONFIG.BOSON_DECIMALS);
+            const bosonAmount = tokenAmount / divisor;
+            
+            console.log(`[CONTRACT_EVENT] Parsed deposit: ${tokenAmount} tokens = ${bosonAmount} bosons from ${fromAddress}`);
+            
+            // Validate amount matches pack prices (20, 50, or 100 bosons)
+            if (validAmounts.includes(bosonAmount)) {
+              console.log(`[CONTRACT_EVENT] ✅ Valid pack purchase detected: ${bosonAmount} bosons`);
               return {
                 signature: logs.signature,
                 fromAddress,
-                amount,
-                blockTime: Date.now() / 1000, // Will be updated if we can get real block time
-                slot
-              };
-            } else {
-              console.log(`[CONTRACT_EVENT] Invalid amount ${amount}, expected: ${validAmounts.join(', ')}`);
-            }
-          }
-        }
-
-        // Alternative parsing methods if your contract uses different log formats:
-        
-        // If your contract emits JSON logs:
-        try {
-          const jsonMatch = message.match(/\{.*\}/);
-          if (jsonMatch) {
-            const eventData = JSON.parse(jsonMatch[0]);
-            if (eventData.type === 'PackPurchase' && validAmounts.includes(eventData.amount)) {
-              return {
-                signature: logs.signature,
-                fromAddress: eventData.fromAddress,
-                amount: eventData.amount,
+                amount: bosonAmount,
                 blockTime: Date.now() / 1000,
                 slot
               };
+            } else {
+              console.log(`[CONTRACT_EVENT] ❌ Invalid amount ${bosonAmount} bosons. Expected: ${validAmounts.join(', ')} bosons`);
             }
+          } else {
+            console.log(`[CONTRACT_EVENT] Failed to parse deposit log format`);
           }
-        } catch (jsonError) {
-          // Not JSON, continue with other parsing methods
         }
-
-        // If your contract emits base64 encoded data:
-        // You can decode and parse binary data here if needed
       }
 
       return null;

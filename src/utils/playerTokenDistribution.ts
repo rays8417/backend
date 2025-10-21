@@ -1,6 +1,7 @@
 import { getPlayerModuleNames } from '../config/players.config';
 import { solanaAdapter } from '../blockchain/adapters/solana.adapter';
 import { REWARD_CONFIG } from '../config/reward.config';
+import { playerPriceService } from '../services/playerPriceService';
 
 export interface TokenDistributionResult {
   player: string;
@@ -35,36 +36,74 @@ export const distributeRandomPlayerTokens = async (
     const selectedPlayers = shuffled.slice(0, numPlayers);
     console.log(`[PLAYER PACK] Selected players:`, selectedPlayers);
 
-    // 3. Calculate shares for each player token
-    const bosonDecimals = REWARD_CONFIG.BOSON_DECIMALS;
-    const multiplier = Math.pow(10, bosonDecimals);
-
-    // Generate random weights for each player
-    const weights: number[] = [];
-    let totalWeight = 0;
-
-    for (let i = 0; i < numPlayers; i++) {
-      // Generate random weight between 0.5 and 2.0 for variety
-      const weight = Math.random() * 1.5 + 0.5;
-      weights.push(weight);
-      totalWeight += weight;
-    }
-
-    // Normalize weights so they sum to totalBosonValue
-    const normalizedValues = weights.map(w => (w / totalWeight) * totalBosonValue);
-
-    console.log(`[PLAYER PACK] Distribution:`);
-    selectedPlayers.forEach((player, i) => {
-      console.log(`  - ${player}: ${normalizedValues[i].toFixed(3)} bosons`);
+    // 3. Fetch real-time prices from liquidity pools
+    console.log(`[PLAYER PACK] Fetching real-time prices from AMM pools...`);
+    const playerPrices = await playerPriceService.getPlayerPrices(selectedPlayers);
+    
+    console.log(`[PLAYER PACK] Player prices (in bosons per token):`);
+    selectedPlayers.forEach(player => {
+      const price = playerPrices.get(player) || 0.01;
+      console.log(`  - ${player}: ${price.toFixed(6)} bosons/token`);
     });
 
-    // 4. Send tokens to user
+    // 4. Randomly allocate boson value to each player
+    const bosonAllocations: number[] = [];
+    let remainingBosons = totalBosonValue;
+    
+    for (let i = 0; i < numPlayers; i++) {
+      if (i === numPlayers - 1) {
+        // Last player gets remaining bosons
+        bosonAllocations.push(remainingBosons);
+      } else {
+        // Random allocation between 10% and 40% of remaining bosons
+        const minAlloc = remainingBosons * 0.1;
+        const maxAlloc = remainingBosons * 0.4;
+        const randomAlloc = Math.random() * (maxAlloc - minAlloc) + minAlloc;
+        bosonAllocations.push(randomAlloc);
+        remainingBosons -= randomAlloc;
+      }
+    }
+
+    // 5. Calculate whole token amounts based on price and allocation
+    const bosonDecimals = REWARD_CONFIG.BOSON_DECIMALS;
+    const multiplier = Math.pow(10, bosonDecimals);
+    
+    const tokenAmounts: number[] = [];
+    let totalActualValue = 0;
+
+    console.log(`[PLAYER PACK] Calculating token amounts based on market prices:`);
+    
+    for (let i = 0; i < selectedPlayers.length; i++) {
+      const player = selectedPlayers[i];
+      const bosonAlloc = bosonAllocations[i];
+      const pricePerToken = playerPrices.get(player) || 0.01;
+      
+      // Calculate how many tokens can be bought with this allocation
+      // tokenAmount = bosonAlloc / pricePerToken
+      const tokensFloat = bosonAlloc / pricePerToken;
+      
+      // Convert to raw token units and ensure whole number
+      const rawTokens = Math.floor(tokensFloat * multiplier);
+      tokenAmounts.push(rawTokens);
+      
+      // Calculate actual value in bosons
+      const actualValue = (rawTokens / multiplier) * pricePerToken;
+      totalActualValue += actualValue;
+      
+      console.log(`  - ${player}: ${bosonAlloc.toFixed(3)} bosons → ${rawTokens} raw tokens (${(rawTokens/multiplier).toFixed(3)} tokens) @ ${pricePerToken.toFixed(6)} bosons/token = ${actualValue.toFixed(3)} boson value`);
+    }
+
+    console.log(`[PLAYER PACK] Total pack value: ${totalBosonValue} bosons`);
+    console.log(`[PLAYER PACK] Total distributed value: ${totalActualValue.toFixed(3)} bosons`);
+    console.log(`[PLAYER PACK] Difference: ${(totalBosonValue - totalActualValue).toFixed(3)} bosons (due to rounding)`);
+
+    // 6. Send tokens to user
     const transferResults: TokenDistributionResult[] = [];
 
     for (let i = 0; i < selectedPlayers.length; i++) {
       const playerModule = selectedPlayers[i];
-      const bosonAmount = normalizedValues[i];
-      const tokenAmount = Math.floor(bosonAmount * multiplier);
+      const tokenAmount = tokenAmounts[i];
+      const bosonAmount = tokenAmount / multiplier;
 
       console.log(`[PLAYER PACK] Transferring ${bosonAmount.toFixed(3)} bosons (${tokenAmount} tokens) of ${playerModule} to ${address}`);
 

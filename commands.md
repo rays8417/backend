@@ -107,5 +107,14 @@ npm run test:coverage    # Run tests with coverage
 
 
 
-//
+const sampleTournament: TournamentData = {
+  name: "Australia vs India ",
+  description: "India tour of Australia, 2025 - 2nd ODI",
+  matchDate: new Date(1761190200000),
+  team1: "Australia",
+  team2: "India",
+  venue: "Adelaide Oval",
+  matchId: "116921", // Replace with actual Cricbuzz match ID
+  rewardPoolAmount: 50000 // 100 BOSON tokens
+};
 
