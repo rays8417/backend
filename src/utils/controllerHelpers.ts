@@ -38,6 +38,7 @@ export const formatTournamentResponse = (tournament: any) => ({
   entryFee: tournament.entryFee,
   maxParticipants: tournament.maxParticipants,
   currentParticipants: tournament.currentParticipants,
+  eligiblePlayers: tournament.eligiblePlayers || [],
   rewardPools: tournament.rewardPools,
   createdAt: tournament.createdAt,
   updatedAt: tournament.updatedAt,
