@@ -1,29 +1,53 @@
 import { Request, Response } from 'express';
 import { prisma } from '../prisma';
-import { REWARD_CONFIG } from '../config/reward.config';
-import { distributeRandomPlayerTokens } from '../utils/playerTokenDistribution';
 
 /**
- * Send starter tokens to new users
- * Randomly selects 2-5 player tokens and distributes them such that total value = 20 bosons
+ * Create a welcome BASE pack for new users
+ * Creates a BASE pack (20 bosons) that the user can open later as a gift
  */
-const sendStarterTokens = async (address: string): Promise<void> => {
+const createWelcomePack = async (address: string): Promise<void> => {
   try {
-    console.log(`[STARTER TOKENS] Sending starter tokens to new user: ${address}`);
+    console.log(`[WELCOME PACK] Creating welcome BASE pack for new user: ${address}`);
     
-    // Get admin private key
-    const adminPrivateKey = REWARD_CONFIG.ADMIN_PRIVATE_KEY;
-    if (!adminPrivateKey) {
-      console.error('[STARTER TOKENS] Admin private key not configured. Cannot send starter tokens.');
+    // Find the user
+    const user = await prisma.user.findUnique({
+      where: { address }
+    });
+
+    if (!user) {
+      console.error('[WELCOME PACK] User not found, cannot create welcome pack');
       return;
     }
 
-    // Use the reusable utility to distribute 20 bosons worth of player tokens
-    await distributeRandomPlayerTokens(address, 20, adminPrivateKey);
+    // Import the pack generation utility
+    const { generatePackData, PACK_TYPES } = await import('../utils/playerTokenDistribution');
+    
+    // Get BASE pack info (20 bosons)
+    const basePackInfo = PACK_TYPES.find(p => p.type === 20);
+    if (!basePackInfo) {
+      console.error('[WELCOME PACK] BASE pack type not found');
+      return;
+    }
+
+    // Generate pack data
+    const packData = await generatePackData(basePackInfo.price);
+
+    // Create the welcome pack in database
+    const welcomePack = await prisma.playerPack.create({
+      data: {
+        userId: user.id,
+        packType: 'BASE',
+        isOpened: false,
+        players: packData.players as any,
+        totalValue: packData.totalValue
+      }
+    });
+
+    console.log(`[WELCOME PACK] ✅ Welcome pack created: ${welcomePack.id} (${packData.players.length} players, ${packData.totalValue} bosons)`);
     
   } catch (error) {
-    console.error('[STARTER TOKENS] Error in sendStarterTokens:', error);
-    // Don't throw - we don't want to fail user tracking if starter tokens fail
+    console.error('[WELCOME PACK] Error in createWelcomePack:', error);
+    // Don't throw - we don't want to fail user tracking if welcome pack creation fails
   }
 };
 
@@ -53,12 +77,12 @@ export const trackUser = async (req: Request, res: Response) => {
       },
     });
 
-    // If this is a new user, send starter tokens (async, don't wait)
+    // If this is a new user, create a welcome pack (async, don't wait)
     if (isNewUser) {
-      console.log(`[TRACKER] New user detected: ${address}. Sending starter tokens...`);
+      console.log(`[TRACKER] New user detected: ${address}. Creating welcome pack...`);
       // Fire and forget - don't await
-      sendStarterTokens(address).catch(error => {
-        console.error('[TRACKER] Failed to send starter tokens:', error);
+      createWelcomePack(address).catch(error => {
+        console.error('[TRACKER] Failed to create welcome pack:', error);
       });
     }
 

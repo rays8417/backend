@@ -3,7 +3,8 @@ import {
   getPackTypes,
   openPack,
   getUserPacks,
-  getPackDetails
+  getPackDetails,
+  getLatestUnopenedPack
 } from '../controllers/packs.controller';
 
 const router = express.Router();
@@ -30,6 +31,14 @@ router.post('/open', openPack);
  * @query { opened?: boolean }
  */
 router.get('/user/:address', getUserPacks);
+
+/**
+ * @route GET /api/packs/latest/:address
+ * @desc Get latest unopened pack for user by pack type
+ * @access Public
+ * @query { packType: string } - Pack type (BASE, PRIME, ULTRA)
+ */
+router.get('/latest/:address', getLatestUnopenedPack);
 
 /**
  * @route GET /api/packs/:packId

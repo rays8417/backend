@@ -212,6 +212,87 @@ export const getPackDetails = async (req: Request, res: Response) => {
 };
 
 /**
+ * Get latest unopened pack for user by pack type
+ */
+export const getLatestUnopenedPack = async (req: Request, res: Response) => {
+  try {
+    const { address } = req.params;
+    const { packType } = req.query;
+
+    if (!address) {
+      return res.status(400).json({
+        success: false,
+        error: 'Address is required'
+      });
+    }
+
+    if (!packType) {
+      return res.status(400).json({
+        success: false,
+        error: 'Pack type is required'
+      });
+    }
+
+    // Validate pack type
+    const validPackTypes = ['BASE', 'PRIME', 'ULTRA'];
+    if (!validPackTypes.includes(packType as string)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid pack type. Must be BASE, PRIME, or ULTRA'
+      });
+    }
+
+    // Find user
+    const user = await prisma.user.findUnique({
+      where: { address }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    // Get latest unopened pack of the specified type
+    const pack = await prisma.playerPack.findFirst({
+      where: {
+        userId: user.id,
+        packType: packType as PackType,
+        isOpened: false
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!pack) {
+      return res.status(404).json({
+        success: false,
+        error: `No unopened ${packType} pack found for this user`
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: pack.id,
+        packType: pack.packType,
+        isOpened: pack.isOpened,
+        totalValue: pack.totalValue,
+        createdAt: pack.createdAt,
+        updatedAt: pack.updatedAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting latest unopened pack:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get latest unopened pack'
+    });
+  }
+};
+
+/**
  * Purchase pack function for contract event service
  * This is a simplified version that doesn't require request/response objects
  */
