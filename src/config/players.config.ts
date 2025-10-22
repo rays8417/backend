@@ -31,9 +31,21 @@ export const PLAYER_MODULES: PlayerModule[] = [
     role: 'BAT'
   },
   {
+    moduleName: 'AlexCarey',
+    displayName: 'Alex Carey',
+    team: 'AUS',
+    role: 'WK'
+  },
+  {
     moduleName: 'BenStokes',
     displayName: 'Ben Stokes',
     team: 'ENG',
+    role: 'AR'
+  },
+  {
+    moduleName: 'CooperConnolly',
+    displayName: 'Cooper Connolly',
+    team: 'AUS',
     role: 'AR'
   },
   {
@@ -89,6 +101,24 @@ export const PLAYER_MODULES: PlayerModule[] = [
     displayName: 'Kane Williamson',
     team: 'NZ',
     role: 'BAT'
+  },
+  {
+    moduleName: 'MatthewShort',
+    displayName: 'Matthew Short',
+    team: 'AUS',
+    role: 'AR'
+  },
+  {
+    moduleName: 'MitchellMarsh',
+    displayName: 'Mitchell Marsh',
+    team: 'AUS',
+    role: 'AR'
+  },
+  {
+    moduleName: 'MitchellStarc',
+    displayName: 'Mitchell Starc',
+    team: 'AUS',
+    role: 'BOWL'
   },
   {
     moduleName: 'KharyPierre',

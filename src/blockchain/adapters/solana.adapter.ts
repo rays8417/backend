@@ -9,6 +9,7 @@ import {
 } from '@solana/spl-token';
 import { IBlockchainService, TokenHolder, TransferResult, AccountInfo } from '../interfaces/IBlockchainService';
 import { parseIgnoredAddresses, REWARD_CONFIG } from '../../config/reward.config';
+import { PLAYER_TOKEN_MINTS, PLAYER_POOL_MAP } from '../../utils/constants';
 import bs58 from 'bs58';
 import dotenv from 'dotenv';
 
@@ -25,65 +26,13 @@ dotenv.config();
  * - Direct RPC account queries for token holders
  */
 
-// Player token mints configuration - maps player module names to Solana mint addresses
-const PLAYER_TOKEN_MINTS: Record<string, string> = {
-  'Boson': 'HtnUp4FXaKC7MvpWP2N8W25rea75XspMiiw3XEixE8Jd',
-  'ShubhmanGill': 'Az2cZgMbBUorGDZe9EUUx2pxzCenmzC3iEysqz31Ma8a',
-  'BenStokes': '5qBqQyobhK9rMYcK5PnwmWUY2GYpuVeqHfPpu4mAJ3rD',
-  'TravisHead': '2yqdx8tQukCHHJiCUsNKGq1mXA9BEmkxSGiouE3u9SSV',
-  'GlenMaxwell': '6mWJRGNUnjbvoqVmP5UoPRYUK7t4zrBiUY4pHBKrbuK8',
-  'ShubhamDube': 'By8cEkVw6wNw4uJWb5PFNS6PyYma2wXZz49ZB6jeJhKo',
-  'HardikPandya': '7o6rdp5eabo3xhAq9Roqh46aaGDygevrttmMiNgDHcgJ',
-  'KaneWilliamson': 'A8VE2H3X862wRA2YbZKto3STPXx8hcWAg6pbe41UbGCo',
-  'AbhishekSharma': '2v49DpyAKD8mxebQ2jes4RvidoybZzfDVRg29vL5yZNL',
-  'JaspreetBumhrah': '9CLC1mmqKxqYSaN7ywgKKwDdxWqUJFqr8KWeuDikW2TN',
-  'SuryakumarYadav': '6AgRnebp5spiBr4VXxJRcYMrjozturT1feLPSTx79kpT',
-  'ViratKohli': '5FhMPnCjrTT56gZfGb7TAupCnRVPpkRZAhG8xkrLfGos',
-  'JoeRoot': '3oDpdwng8fvWFhCUpDzvvt6xeee4WHsDozqb2QJLiLGX',
-  'HarryBrook': '4gfPzmZSneYdN1UwTTNJA4jKLyf4DQ5mcxcsPSoUy9b2',
-  'YashasviJaiswal': '7VTyZcWcdeWZBPEcLzEodsGRWruvSWzTS8cT6HQKoBK9',
-  'RishabhPant': 'CuBFQd57LgfHikAdTVnQrgnFdrsseF78xnrnKVjDoX4z',
-  'RohitSharma': '4pc1TzZM2o5yxATMbQPuzBRVMqf8VtMh3kugPai1iVGm',
-  'KLRahul': 'CiYbhHcUcFn14EJLJzFj1jnbjaw3e5MZQoVfBPdFH4Tr',
-  'JosButtler': '3g57ThxyBLzekz6wYZDpx93Kp96R8bbkmbKX3JQah1L4',
-  'JoshInglis': '9e3A3uPRxjVtdy8i3J3vF84rRURS4mj9JipkRRrxRvya',
-  'WashingtonSundar': 'FUFyqx1DBK9TkMtmuwkcQqetvrb3nx67YtVbgBi9MzGB',
-  'ShaiHope': '21pYFJLWdStBa9qB2QhgDD49iJXNqSxgnN19qduuR1GK',
-  'JohnCampbell': '8cpq5bWEoMYghki8D7DyJ25NaD6cjuSnJtbR3tWCeCfh',
-  'KharyPierre': '7uQQwoYigCfvh18rdbSqixbJ8imQV2b6ou3MTwrzmH5a',
-  'MohammedSiraj': '253unST1UwE1Ykg3BWF68iGajhzAkajzQKNQU4QueR2P',
-  'AlickAthanaze': '9LS4Prb6wS8TpjjztkWVRG2k81NPbpuhwZEXcv1qff43',
-};
+// Player token mints configuration - imported from constants.ts (single source of truth)
+// PLAYER_TOKEN_MINTS is now imported from '../../utils/constants'
 
 // Pool addresses for each player token (liquidity pools for trading)
 // These should be ignored when counting token holders since they're protocol-owned
-const PLAYER_POOL_ADDRESSES = [
-  'JDD9WuLPq234fFRSPZqmUySaF8ie3PDFDQNgJg2Y9J7T', // Ben Stokes pool
-  'C8mafYpr8jonN5chS9pxix3cMWBEfgJ2YQxgGssiXoP5', // Travis Head pool
-  '4NjCSE89Pyq1cdWfygtXoj1YukDu8kPRXr31cB8Pud8e', // Glenn Maxwell pool
-  'BwrRH1WZsSH1MdHzpAeErGCp8bkXtp3GQWCwwRhzuBwe', // Shubham Dube pool
-  'Cb7dSXQE7ZnzhGR7t3u4fGfM9jHL67XXnpgukMB4ZVuS', // Hardik Pandya pool
-  'DKyPdCj9whq8MduqiNUcM9xVAsoWR89jAsdUFhRUsetJ', // Shubman Gill pool
-  '8R8yWsHRP3CXLDNf633hBrw2PyFoNJz2Q8SrT24JXxor', // Kane Williamson pool
-  'BhCEGn2mpaBGU3sD6Ma5rPfFuoHeJC2554JCpLtg9H3u', // Abhishek Sharma pool
-  '9eMF3Bzq4dJ5teoo5GBYM45xrKZ26MkMhiuzWrUdJWpc', // Jasprit Bumrah pool
-  'EnEyhg12Cm6NPvr4jbVtYCpv5snGZCF4bWmRdaC7rvNJ', // Suryakumar Yadav pool
-  'DdkpLNQ1S2SwoWgvajHvQHkraYBLk6q8sfSBrguckFxz', // Virat Kohli pool
-  '3B2UiTvsxQDF3t96UHhS9upHQ4WtjbzkHH26vGDLd7hg', // Joe Root pool
-  '9UWymQ4XLaCuyZpuxjup36z2FmZ1dsRSfXYNvLwSqAcG', // Harry Brook pool
-  'Bxdq1cGXVj9NNzbak3vVDYqAu3cjjzPuKEVhVNzA3WRi', // Yashasvi Jaiswal pool
-  'EaZ9m6p2wa8ZKkkq7SaBpCz4uaAS4SdsrqgUgeJYcyKW', // Rishabh Pant pool
-  'CFeJ9t2cMkUW7WNEyeQyriFjjd4xvpV6z36rw6YRepcF', // Rohit Sharma pool
-  '6exJH9dLUXTVBLMrZ9hoAvynbBNYhreSNKMMLHhrbesW', // KL Rahul pool
-  '4YgXZzaWJohMaZ8dJJaWVBibEG3J5txX9A5YJ4Q49W1E', // Jos Buttler pool
-  'Dmbi9NfSAXMEmTdBvmCkX5UAUa5kSE6wWseEPpUCD15E', // Josh Inglis pool
-  'AxkmS9mFsf1dEN3fENWQW1UYEuPcQ1BG2tUd1qqLG3bj', // Washington Sundar pool
-  '26K4GTuhGEFFmwwXpNfiwxc6b8xSmgSkAB6XpWYkpYzH', // Shai Hope pool
-  'BCvQHZDNCZUojZuszFy8kumkg1W3Hjnfs5eXJtqL9nRR', // John Campbell pool
-  'BrMpcXBEGs4CStAQLC1QegkkWuyduQKDLFq5VsKtCPZL', // Khary Pierre pool
-  'GBN2YumWRGAPAwZbywd2Q5txpRgwpLn7MB5FqLD86rCP', // Mohammed Siraj pool
-  '3skaq6tdwJsF8k4Q7yHeCyUZ75wR7K9DsqoHHLoBiDeL', // Alick Athanaze pool
-];
+// Convert PLAYER_POOL_MAP to array for compatibility with existing code
+const PLAYER_POOL_ADDRESSES = Object.values(PLAYER_POOL_MAP);
 
 // AMM PDA (protocol-level address)
 const AMM_PDA = '4ZnuhoWp9csaEm8LZeeNgbgXQ6tHoz4yTw3feA6DiH1e';

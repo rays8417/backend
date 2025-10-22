@@ -24,13 +24,18 @@ export const PLAYER_POOL_MAP: Record<string, string> = {
     'KharyPierre': 'BrMpcXBEGs4CStAQLC1QegkkWuyduQKDLFq5VsKtCPZL',
     'MohammedSiraj': 'GBN2YumWRGAPAwZbywd2Q5txpRgwpLn7MB5FqLD86rCP',
     'AlickAthanaze': '3skaq6tdwJsF8k4Q7yHeCyUZ75wR7K9DsqoHHLoBiDeL',
+    'AlexCarey': 'HjBVdUL7FfNngK7HNeWPzWu5wgL2uyZsd2qTVFt7SySb',
+    'CooperConnolly': '2RrRq8BXY3HZW2ez4Nz71H8Z9erqxTyHRwnFV85HkaQf',
+    'MatthewShort': '7Wg9F36DouRYdAGDcqKaj42EJFsi8DKQBD14MdQAGbFg',
+    'MitchellMarsh': '7oiQMF9v8GNQLCB6AeD6XzvAhBeFxnTfy9Cc2WxaQJ1F',
+    'MitchellStarc': 'GiRpNU9CQKABbR9PUke9PaWAZ8X81kERd9reWAmDEUHq',
   };
   
   
   export const BOSON_MINT = 'HtnUp4FXaKC7MvpWP2N8W25rea75XspMiiw3XEixE8Jd';
   
   export const PLAYER_TOKEN_MINTS: Record<string, string> = {
-    'ShubhmanGill': 'E4ixLqAcjioCVTBhW9VQxpCFHhJFnwyMVYTZJyzWQaar',
+    'ShubhmanGill': 'Az2cZgMbBUorGDZe9EUUx2pxzCenmzC3iEysqz31Ma8a',
     'BenStokes': '5qBqQyobhK9rMYcK5PnwmWUY2GYpuVeqHfPpu4mAJ3rD',
     'TravisHead': '2yqdx8tQukCHHJiCUsNKGq1mXA9BEmkxSGiouE3u9SSV',
     'GlenMaxwell': '6mWJRGNUnjbvoqVmP5UoPRYUK7t4zrBiUY4pHBKrbuK8',
@@ -55,4 +60,9 @@ export const PLAYER_POOL_MAP: Record<string, string> = {
     'KharyPierre': '7uQQwoYigCfvh18rdbSqixbJ8imQV2b6ou3MTwrzmH5a',
     'MohammedSiraj': '253unST1UwE1Ykg3BWF68iGajhzAkajzQKNQU4QueR2P',
     'AlickAthanaze': '9LS4Prb6wS8TpjjztkWVRG2k81NPbpuhwZEXcv1qff43',
+    'AlexCarey': 'ER4Jb1sjwmDLLCaLxyndsghpr4dCrZXx9DpPoUk247Dw',
+    'CooperConnolly': '9sncytigXqjYY88cPY57scabSY3Lvv1HxiwMQjAJZUSe',
+    'MatthewShort': 'B3p85TexdWYuRZEPHZvxdknmdz5GHKHfCMHxxahyTVjn',
+    'MitchellMarsh': 'ChkZMTQYbvDWa8JMjzaaaY9qoXJydqAihnpcBErX51wg',
+    'MitchellStarc': 'A8GDDxW1XrgJZa2atQF62HiyWfdv21ZpPCDF456C91vy',
   };

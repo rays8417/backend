@@ -99,12 +99,24 @@ function mapPlayerNameToModuleName(playerName: string): string | null {
     'athanaze': 'AlickAthanaze',
     'alick': 'AlickAthanaze',
     
+    // Alex Carey
+    'alexcarey': 'AlexCarey',
+    'acarey': 'AlexCarey',
+    'carey': 'AlexCarey',
+    'alex': 'AlexCarey',
+    
     // Ben Stokes
     'benstokes': 'BenStokes',
     'bstokes': 'BenStokes',
     'stokes': 'BenStokes',
     'benjaminstokes': 'BenStokes',
     'ben': 'BenStokes',
+    
+    // Cooper Connolly
+    'cooperconnolly': 'CooperConnolly',
+    'cconnolly': 'CooperConnolly',
+    'connolly': 'CooperConnolly',
+    'cooper': 'CooperConnolly',
     
     // Glenn Maxwell
     'glenmaxwell': 'GlenMaxwell',
@@ -164,6 +176,23 @@ function mapPlayerNameToModuleName(playerName: string): string | null {
     'kwilliamson': 'KaneWilliamson',
     'williamson': 'KaneWilliamson',
     'kane': 'KaneWilliamson',
+    
+    // Matthew Short
+    'matthewshort': 'MatthewShort',
+    'mshort': 'MatthewShort',
+    'short': 'MatthewShort',
+    'matthew': 'MatthewShort',
+    
+    // Mitchell Marsh
+    'mitchellmarsh': 'MitchellMarsh',
+    'mmarsh': 'MitchellMarsh',
+    'marsh': 'MitchellMarsh',
+    'mitchell': 'MitchellMarsh',
+    
+    // Mitchell Starc
+    'mitchellstarc': 'MitchellStarc',
+    'mstarc': 'MitchellStarc',
+    'starc': 'MitchellStarc',
     
     // Khary Pierre
     'kharypierre': 'KharyPierre',
