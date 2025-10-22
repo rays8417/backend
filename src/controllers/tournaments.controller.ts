@@ -100,20 +100,21 @@ export const getTournamentById = async (req: Request, res: Response) => {
 
 /**
  * GET /api/tournaments/:id/eligible-players
- * Get eligible players for tournament from Cricbuzz
+ * Get eligible players for tournament from database
  */
 export const getEligiblePlayersForTournament = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { address } = req.query;
 
-    // Get tournament details including matchId
+    // Get tournament details including eligiblePlayers
     const validation = await validateTournament(id, {
       matchId: true,
       name: true,
       team1: true,
       team2: true,
-      status: true
+      status: true,
+      eligiblePlayers: true
     });
 
     if (validation.error) {
@@ -122,15 +123,27 @@ export const getEligiblePlayersForTournament = async (req: Request, res: Respons
 
     const tournament = validation.tournament!;
 
-    if (!tournament.matchId) {
-      return res.status(400).json({ 
-        error: "Tournament does not have a match ID",
-        message: "Cannot fetch players without a valid match ID"
+    // Check if eligible players are stored in database
+    if (!tournament.eligiblePlayers || tournament.eligiblePlayers.length === 0) {
+      return res.status(404).json({
+        error: "No eligible players found",
+        message: "Eligible players have not been stored for this tournament yet. Please call the store-eligible-players endpoint first.",
+        suggestion: `POST /api/tournaments/${id}/store-eligible-players`
       });
     }
 
-    // Fetch eligible players from Cricbuzz API
-    const eligiblePlayers = await getEligiblePlayers(Number(tournament.matchId));
+    console.log(`📋 Found ${tournament.eligiblePlayers.length} eligible players in database for tournament: ${tournament.name}`);
+
+    // Create player objects from stored module names
+    // Note: We only have module names stored, so we'll create basic player objects
+    const eligiblePlayers = tournament.eligiblePlayers.map((moduleName, index) => ({
+      id: `stored-${index}`,
+      name: moduleName, // Using moduleName as name since we don't store the original name
+      moduleName: moduleName,
+      role: 'Unknown', // We don't store role in the current schema
+      teamName: 'Unknown', // We don't store team info in the current schema
+      teamId: 0 // We don't store team ID in the current schema
+    }));
 
     // If address is provided, fetch holdings for each eligible player
     let playersWithHoldings = eligiblePlayers;
@@ -173,12 +186,101 @@ export const getEligiblePlayersForTournament = async (req: Request, res: Respons
       },
       address: address || null,
       totalPlayers: playersWithHoldings.length,
-      players: playersWithHoldings.map(formatEligiblePlayerResponse)
+      players: playersWithHoldings.map(formatEligiblePlayerResponse),
+      note: "Players fetched from database. For detailed player info, use the store-eligible-players endpoint."
     });
   } catch (error: any) {
     console.error("Eligible players fetch error:", error);
     res.status(500).json({ 
       error: "Failed to fetch eligible players",
+      details: error.message
+    });
+  }
+};
+
+/**
+ * POST /api/tournaments/:id/store-eligible-players
+ * Fetch eligible players from Cricbuzz API and store them in the database
+ */
+export const storeEligiblePlayersForTournament = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Get tournament details including matchId
+    const validation = await validateTournament(id, {
+      matchId: true,
+      name: true,
+      team1: true,
+      team2: true,
+      status: true
+    });
+
+    if (validation.error) {
+      return res.status(validation.error.status).json({ error: validation.error.message });
+    }
+
+    const tournament = validation.tournament!;
+
+    if (!tournament.matchId) {
+      return res.status(400).json({ 
+        error: "Tournament does not have a match ID",
+        message: "Cannot fetch players without a valid match ID"
+      });
+    }
+
+    console.log(`🔄 Fetching eligible players for tournament: ${tournament.name} (Match ID: ${tournament.matchId})`);
+
+    // Fetch eligible players from Cricbuzz API
+    const eligiblePlayers = await getEligiblePlayers(Number(tournament.matchId));
+
+    if (!eligiblePlayers || eligiblePlayers.length === 0) {
+      return res.status(404).json({
+        error: "No eligible players found",
+        message: "No players were found for this match or no players matched our module system"
+      });
+    }
+
+    // Extract module names for storage
+    const moduleNames = eligiblePlayers.map(player => player.moduleName).filter(Boolean);
+
+    // Update tournament with eligible players
+    const updatedTournament = await prisma.tournament.update({
+      where: { id },
+      data: {
+        eligiblePlayers: moduleNames
+      },
+      select: {
+        id: true,
+        name: true,
+        team1: true,
+        team2: true,
+        status: true,
+        eligiblePlayers: true,
+        updatedAt: true
+      }
+    });
+
+    console.log(`✅ Stored ${moduleNames.length} eligible players for tournament ${tournament.name}`);
+
+    res.json({
+      success: true,
+      message: `Successfully stored ${moduleNames.length} eligible players`,
+      tournament: {
+        id: updatedTournament.id,
+        name: updatedTournament.name,
+        team1: updatedTournament.team1,
+        team2: updatedTournament.team2,
+        status: updatedTournament.status,
+        eligiblePlayersCount: moduleNames.length,
+        lastUpdated: updatedTournament.updatedAt
+      },
+      players: eligiblePlayers.map(formatEligiblePlayerResponse)
+    });
+
+  } catch (error: any) {
+    console.error("Store eligible players error:", error);
+    res.status(500).json({ 
+      error: "Failed to store eligible players",
       details: error.message
     });
   }
