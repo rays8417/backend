@@ -35,6 +35,7 @@ export const PLAYER_POOL_MAP: Record<string, string> = {
   export const BOSON_MINT = 'HtnUp4FXaKC7MvpWP2N8W25rea75XspMiiw3XEixE8Jd';
   
   export const PLAYER_TOKEN_MINTS: Record<string, string> = {
+    'Boson': BOSON_MINT, // Game token for rewards
     'ShubhmanGill': 'Az2cZgMbBUorGDZe9EUUx2pxzCenmzC3iEysqz31Ma8a',
     'BenStokes': '5qBqQyobhK9rMYcK5PnwmWUY2GYpuVeqHfPpu4mAJ3rD',
     'TravisHead': '2yqdx8tQukCHHJiCUsNKGq1mXA9BEmkxSGiouE3u9SSV',

@@ -119,11 +119,16 @@ export class SolanaAdapter implements IBlockchainService {
             continue;
           }
           
-            // Validate address format
+            // Validate address format (must be 32-44 characters for base58)
+            if (!owner || owner.length < 32 || owner.length > 44) {
+              console.error(`[SOLANA] Invalid address length: ${owner} (${owner?.length} chars)`);
+              continue;
+            }
+            
             try {
               new PublicKey(owner);
             } catch (err) {
-              console.error(`[SOLANA] Invalid address format: ${owner}`);
+              console.error(`[SOLANA] Invalid address format: ${owner} - ${err instanceof Error ? err.message : 'Unknown error'}`);
               continue;
             }
             
@@ -241,6 +246,64 @@ export class SolanaAdapter implements IBlockchainService {
   }
 
   /**
+   * Get token holders with balances for specific eligible players only
+   * 
+   * This method filters the snapshot to only include eligible players for a tournament,
+   * providing a more focused snapshot that only includes relevant player tokens.
+   */
+  async getTokenHoldersWithBalancesForEligiblePlayers(eligiblePlayers: string[]): Promise<TokenHolder[]> {
+    try {
+      console.log(`[SOLANA] Fetching token holders for eligible players only: ${eligiblePlayers.join(', ')}`);
+      
+      // Validate that all eligible players exist in our player mints
+      const validEligiblePlayers = eligiblePlayers.filter(player => this.playerMints.has(player));
+      const invalidPlayers = eligiblePlayers.filter(player => !this.playerMints.has(player));
+      
+      if (invalidPlayers.length > 0) {
+        console.warn(`[SOLANA] ⚠️  Invalid eligible players found: ${invalidPlayers.join(', ')}`);
+        console.warn(`[SOLANA] ⚠️  Available players: ${Array.from(this.playerMints.keys()).join(', ')}`);
+      }
+      
+      if (validEligiblePlayers.length === 0) {
+        console.log(`[SOLANA] ⚠️  No valid eligible players found, returning empty result`);
+        return [];
+      }
+      
+      console.log(`[SOLANA] Querying ${validEligiblePlayers.length} eligible player tokens...`);
+      
+      const allHolders: TokenHolder[] = [];
+      
+      // For each eligible player token, get ALL holders with balances in ONE call
+      for (let i = 0; i < validEligiblePlayers.length; i++) {
+        const moduleName = validEligiblePlayers[i];
+        const playerId = (i + 1).toString();
+        
+        console.log(`[SOLANA] [${i + 1}/${validEligiblePlayers.length}] Fetching holders for ${moduleName}...`);
+        
+        try {
+          const holders = await this.getTokenHoldersForPlayer(moduleName, playerId);
+          
+          if (holders.length > 0) {
+            console.log(`[SOLANA] ✅ ${moduleName}: Found ${holders.length} holder(s)`);
+            allHolders.push(...holders);
+          }
+        } catch (error) {
+          console.error(`[SOLANA] ❌ Error fetching holders for ${moduleName}:`, error);
+          // Continue with other tokens even if one fails
+        }
+      }
+
+      console.log(`[SOLANA] ✅ Total: Found ${allHolders.length} token holdings across ${validEligiblePlayers.length} eligible tokens`);
+      console.log(`[SOLANA] RPC calls made: ${validEligiblePlayers.length} (optimized for eligible players only)`);
+      
+      return allHolders;
+    } catch (error) {
+      console.error('[SOLANA] Error in getTokenHoldersWithBalancesForEligiblePlayers:', error);
+      throw new Error(`Failed to get token holders for eligible players: ${error}`);
+    }
+  }
+
+  /**
    * Get unified holder list sourced from Boson token module
    */
   async getBosonTokenHolders(): Promise<string[]> {
@@ -302,11 +365,16 @@ export class SolanaAdapter implements IBlockchainService {
               continue;
             }
             
-            // Validate address format
+            // Validate address format (must be 32-44 characters for base58)
+            if (!owner || owner.length < 32 || owner.length > 44) {
+              console.error(`[SOLANA] Invalid address length: ${owner} (${owner?.length} chars)`);
+              continue;
+            }
+            
             try {
               new PublicKey(owner);
             } catch (err) {
-              console.error(`[SOLANA] Invalid address format: ${owner}`);
+              console.error(`[SOLANA] Invalid address format: ${owner} - ${err instanceof Error ? err.message : 'Unknown error'}`);
               continue;
             }
             
@@ -396,6 +464,15 @@ export class SolanaAdapter implements IBlockchainService {
         mintAddress = new PublicKey(tokenType);
       }
 
+      // Validate address before attempting to create PublicKey
+      if (!toAddress || typeof toAddress !== 'string') {
+        throw new Error(`Invalid address: address is ${toAddress === null ? 'null' : typeof toAddress}`);
+      }
+      
+      if (toAddress.length < 32 || toAddress.length > 44) {
+        throw new Error(`Invalid address length: ${toAddress.length} chars. Expected 32-44 chars for valid Solana address. Address: ${toAddress}`);
+      }
+      
       const toPublicKey = new PublicKey(toAddress);
 
       // Prevent self-transfers
@@ -654,56 +731,42 @@ export class SolanaAdapter implements IBlockchainService {
         throw new Error(`Failed to send transaction: ${sendError instanceof Error ? sendError.message : 'Unknown send error'}`);
       }
 
-      // Confirm transaction with retry logic and status checking
+      // Confirm transaction using HTTP polling (avoids unreliable WebSocket issues)
       let confirmation;
-      let retries = 0;
-      const maxRetries = 3;
+      const maxAttempts = 30; // 30 attempts * 2s = 60s total
       
-      while (retries < maxRetries) {
+      console.log(`[SOLANA] Confirming transaction via HTTP polling...`);
+      
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
-          // Use finalized commitment for more reliable confirmation, but with timeout
-          const confirmPromise = this.connection.confirmTransaction(signature, 'confirmed');
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Confirmation timeout')), 60000) // 60s timeout
-          );
+          const status = await this.connection.getSignatureStatus(signature);
           
-          confirmation = await Promise.race([confirmPromise, timeoutPromise]) as any;
-          console.log(`[SOLANA] Transaction confirmed: ${JSON.stringify(confirmation.value)}`);
-          break;
-        } catch (confirmError) {
-          console.error(`[SOLANA] Confirmation attempt ${retries + 1} error:`, confirmError);
-          
-          // Check if transaction actually succeeded by fetching it
-          try {
-            const status = await this.connection.getSignatureStatus(signature);
-            if (status?.value?.confirmationStatus === 'confirmed' || status?.value?.confirmationStatus === 'finalized') {
-              console.log(`[SOLANA] Transaction found on-chain with status: ${status.value.confirmationStatus}`);
+          if (status?.value) {
+            const confirmationStatus = status.value.confirmationStatus;
+            
+            if (confirmationStatus === 'confirmed' || confirmationStatus === 'finalized') {
+              console.log(`[SOLANA] Transaction confirmed on-chain (status: ${confirmationStatus})`);
               confirmation = { value: { err: status.value.err } };
               break;
+            } else if (confirmationStatus === 'processed') {
+              console.log(`[SOLANA] Transaction processed, waiting for confirmation... (${attempt + 1}/${maxAttempts})`);
             }
-          } catch (statusError) {
-            console.error(`[SOLANA] Error checking transaction status:`, statusError);
+          } else {
+            console.log(`[SOLANA] Waiting for transaction to appear on-chain... (${attempt + 1}/${maxAttempts})`);
           }
           
-          retries++;
-          if (retries >= maxRetries) {
-            // Last resort: check one more time if transaction is on-chain
-            try {
-              const finalStatus = await this.connection.getSignatureStatus(signature);
-              if (finalStatus?.value) {
-                console.log(`[SOLANA] Transaction found after retries:`, finalStatus.value);
-                confirmation = { value: { err: finalStatus.value.err } };
-                break;
-              }
-            } catch (e) {
-              // Transaction truly failed or wasn't included
-            }
-            throw new Error(`Transaction confirmation failed after ${maxRetries} retries: ${confirmError instanceof Error ? confirmError.message : 'Unknown confirmation error'}`);
-          }
+          // Wait 2 seconds before next check
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (statusError) {
+          console.error(`[SOLANA] Error checking transaction status (attempt ${attempt + 1}):`, statusError);
           
-          // Wait before retry
+          // Wait before retrying
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
+      }
+      
+      if (!confirmation) {
+        throw new Error(`Transaction confirmation timeout after ${maxAttempts * 2}s. Transaction may still succeed - check signature: ${signature}`);
       }
 
       const success = !confirmation.value.err;
@@ -767,6 +830,7 @@ export class SolanaAdapter implements IBlockchainService {
       // Execute transfers in parallel within the batch
       const batchPromises = batch.map(async (transfer) => {
         try {
+          console.log(`[SOLANA] Batch transfer - Address: "${transfer.address}" (length: ${transfer.address.length})`);
           const result = await this.transferTokens(
             privateKeyString,
             transfer.address,
