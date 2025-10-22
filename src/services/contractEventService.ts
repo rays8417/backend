@@ -128,27 +128,21 @@ export class ContractEventService {
       
       for (const message of logMessages) {
         if (typeof message === 'string' && message.includes('Program log: Deposited')) {
-          console.log(`[CONTRACT_EVENT] Found deposit log: ${message}`);
-          
           // Parse: "Program log: Deposited {amount} tokens from {address}"
-          // Example: "Program log: Deposited 100000 tokens from 2rGhvAWYnCKzKcmVxpnZ2Zpo6MirgbBHBYz2rYdykXBC"
           const regex = /Program log: Deposited (\d+) tokens from (\S+)/;
           const match = message.match(regex);
           
           if (match && match.length >= 3) {
-            const tokenAmount = parseInt(match[1]); // e.g., 100000
-            const fromAddress = match[2]; // e.g., "2rGhvAWYnCKzKcmVxpnZ2Zpo6MirgbBHBYz2rYdykXBC"
+            const tokenAmount = parseInt(match[1]);
+            const fromAddress = match[2];
             
-            // Convert token amount to bosons using configured decimals
-            // Example: 100000 tokens with 3 decimals = 100 bosons (100000 / 10^3)
+            // Convert token amount to bosons
             const divisor = Math.pow(10, REWARD_CONFIG.BOSON_DECIMALS);
             const bosonAmount = tokenAmount / divisor;
             
-            console.log(`[CONTRACT_EVENT] Parsed deposit: ${tokenAmount} tokens = ${bosonAmount} bosons from ${fromAddress}`);
-            
             // Validate amount matches pack prices (20, 50, or 100 bosons)
             if (validAmounts.includes(bosonAmount)) {
-              console.log(`[CONTRACT_EVENT] ✅ Valid pack purchase detected: ${bosonAmount} bosons`);
+              console.log(`💰 Pack purchase: ${bosonAmount} bosons from ${fromAddress.substring(0, 8)}...`);
               return {
                 signature: logs.signature,
                 fromAddress,
@@ -156,11 +150,7 @@ export class ContractEventService {
                 blockTime: Date.now() / 1000,
                 slot
               };
-            } else {
-              console.log(`[CONTRACT_EVENT] ❌ Invalid amount ${bosonAmount} bosons. Expected: ${validAmounts.join(', ')} bosons`);
             }
-          } else {
-            console.log(`[CONTRACT_EVENT] Failed to parse deposit log format`);
           }
         }
       }
@@ -178,45 +168,18 @@ export class ContractEventService {
    */
   private async processPackPurchase(event: ContractEvent): Promise<void> {
     try {
-      console.log(`[CONTRACT_EVENT] Processing pack purchase:`, {
-        fromAddress: event.fromAddress.substring(0, 12) + '...',
-        amount: event.amount,
-        signature: event.signature.substring(0, 12) + '...'
-      });
-
       // Import the purchasePack function dynamically to avoid circular dependencies
       const { purchasePack } = await import('../controllers/packs.controller');
       
-      // Create a mock request/response for the purchasePack function
-      const mockReq = {
-        body: {
-          userAddress: event.fromAddress,
-          packType: event.amount as PackType,
-          bosonAmount: event.amount,
-          transactionHash: event.signature
-        }
-      } as any;
-
-      const mockRes = {
-        json: (data: any) => {
-          if (data.success) {
-            console.log(`[CONTRACT_EVENT] ✅ Pack purchase processed successfully`);
-            console.log(`[CONTRACT_EVENT] Summary:`, data.packPurchase?.summary);
-          } else {
-            console.error(`[CONTRACT_EVENT] ❌ Pack purchase failed:`, data.error);
-          }
-        },
-        status: (code: number) => ({
-          json: (data: any) => {
-            console.error(`[CONTRACT_EVENT] ❌ Pack purchase failed (${code}):`, data);
-          }
-        })
-      } as any;
-
-      await purchasePack(mockReq, mockRes);
+      // Call the purchasePack function directly
+      const result = await purchasePack(event.fromAddress, event.amount, event.signature);
+      
+      if (result.success) {
+        console.log(`🎉 Pack purchased: ${result.packType} (${result.totalValue} bosons)`);
+      }
 
     } catch (error) {
-      console.error('[CONTRACT_EVENT] Error processing pack purchase:', error);
+      console.error('❌ Pack purchase failed:', error instanceof Error ? error.message : 'Unknown error');
     }
   }
 

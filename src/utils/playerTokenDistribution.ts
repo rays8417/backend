@@ -190,3 +190,93 @@ export const PACK_TYPES: PackInfo[] = [
     description: 'Random 4-7 player tokens worth 100 bosons'
   }
 ];
+
+export interface PackPlayerData {
+  player: string;
+  amount: number;
+  price: number;
+}
+
+export interface PackGenerationResult {
+  players: PackPlayerData[];
+  totalValue: number;
+}
+
+/**
+ * Generate pack data without transferring tokens
+ * This is used when creating a pack that will be opened later
+ * @param totalBosonValue - Total value in bosons for the pack
+ * @returns Promise<PackGenerationResult> - Pack data without transfers
+ */
+export const generatePackData = async (
+  totalBosonValue: number
+): Promise<PackGenerationResult> => {
+  try {
+    // 1. Generate random number of player tokens (4-7)
+    const numPlayers = Math.floor(Math.random() * 4) + 4; // Random between 4-7
+
+    // 2. Get all player modules and randomly select
+    const allPlayers = getPlayerModuleNames();
+    const shuffled = allPlayers.sort(() => Math.random() - 0.5);
+    const selectedPlayers = shuffled.slice(0, numPlayers);
+
+    // 3. Fetch real-time prices from liquidity pools
+    const playerPrices = await playerPriceService.getPlayerPrices(selectedPlayers);
+
+    // 4. Randomly allocate boson value to each player
+    const bosonAllocations: number[] = [];
+    let remainingBosons = totalBosonValue;
+    
+    for (let i = 0; i < numPlayers; i++) {
+      if (i === numPlayers - 1) {
+        // Last player gets remaining bosons
+        bosonAllocations.push(remainingBosons);
+      } else {
+        // Random allocation between 10% and 40% of remaining bosons
+        const minAlloc = remainingBosons * 0.1;
+        const maxAlloc = remainingBosons * 0.4;
+        const randomAlloc = Math.random() * (maxAlloc - minAlloc) + minAlloc;
+        bosonAllocations.push(randomAlloc);
+        remainingBosons -= randomAlloc;
+      }
+    }
+
+    // 5. Calculate whole token amounts based on price and allocation
+    const bosonDecimals = REWARD_CONFIG.BOSON_DECIMALS;
+    const multiplier = Math.pow(10, bosonDecimals);
+    
+    const packPlayers: PackPlayerData[] = [];
+    let totalActualValue = 0;
+    
+    for (let i = 0; i < selectedPlayers.length; i++) {
+      const player = selectedPlayers[i];
+      const bosonAlloc = bosonAllocations[i];
+      const pricePerToken = playerPrices.get(player) || 0.01;
+      
+      // Calculate how many tokens can be bought with this allocation
+      const tokensFloat = bosonAlloc / pricePerToken;
+      
+      // Convert to raw token units and ensure whole number
+      const rawTokens = Math.floor(tokensFloat * multiplier);
+      
+      // Calculate actual value in bosons
+      const actualValue = (rawTokens / multiplier) * pricePerToken;
+      totalActualValue += actualValue;
+      
+      packPlayers.push({
+        player: player,
+        amount: rawTokens,
+        price: pricePerToken
+      });
+    }
+
+    return {
+      players: packPlayers,
+      totalValue: totalActualValue
+    };
+
+  } catch (error) {
+    console.error('[PACK GENERATION] Error in generatePackData:', error);
+    throw error;
+  }
+};

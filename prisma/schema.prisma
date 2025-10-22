@@ -107,7 +107,24 @@ model User {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
+  playerPacks PlayerPack[]
+  
   @@map("users")
+}
+
+model PlayerPack {
+  id          String   @id @default(uuid())
+  userId      String
+  packType    PackType
+  isOpened    Boolean  @default(false)
+  players     Json     // Store player tokens as JSON array
+  totalValue  Decimal  // Total boson value of the pack
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("player_packs")
 }
 
 // Enums
@@ -135,4 +152,10 @@ enum RewardStatus {
 enum SnapshotType {
   PRE_MATCH
   POST_MATCH
+}
+
+enum PackType {
+  BASE
+  PRIME
+  ULTRA
 }
