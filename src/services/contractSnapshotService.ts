@@ -109,19 +109,34 @@ export async function createContractSnapshot(
   try {
     console.log(`[CONTRACT_SNAPSHOT] Creating ${snapshotType} snapshot for tournament ${tournamentId}...`);
     
-    // Validate tournament exists
+    // Validate tournament exists and get eligible players
     const tournament = await prisma.tournament.findUnique({
-      where: { id: tournamentId }
+      where: { id: tournamentId },
+      select: {
+        id: true,
+        name: true,
+        eligiblePlayers: true
+      }
     });
+    console.log(`Tournament: ${tournament}`);
 
     if (!tournament) {
       throw new Error('Tournament not found');
     }
 
-    // Step 1: Get blockchain contract data
-    console.log('[CONTRACT_SNAPSHOT] Fetching data from blockchain...');
-    const tokenHolders = await blockchain.getTokenHoldersWithBalances();
-    console.log('Token Holders:', tokenHolders.length);
+
+
+    // Check if tournament has eligible players
+    if (!tournament.eligiblePlayers || tournament.eligiblePlayers.length === 0) {
+      throw new Error('Tournament has no eligible players. Please store eligible players first.');
+    }
+
+    console.log(`[CONTRACT_SNAPSHOT] Tournament "${tournament.name}" has ${tournament.eligiblePlayers.length} eligible players:`, tournament.eligiblePlayers);
+
+    // Step 1: Get blockchain contract data for eligible players only
+    console.log('[CONTRACT_SNAPSHOT] Fetching data from blockchain for eligible players only...');
+    const tokenHolders = await blockchain.getTokenHoldersWithBalances(tournament.eligiblePlayers);
+    console.log(`Token Holders for eligible players: ${tokenHolders.length}`);
     const ignored = parseIgnoredAddresses();
     const filteredHolders = tokenHolders.filter(h => !ignored.has(h.address.toLowerCase()));
     const currentBlockNumber = await blockchain.getCurrentBlockNumber();

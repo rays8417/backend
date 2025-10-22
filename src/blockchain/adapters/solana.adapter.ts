@@ -205,13 +205,21 @@ export class SolanaAdapter implements IBlockchainService {
    * Previous approach: N users × 26 tokens = 26N calls
    * New approach: 25 player tokens = 25 calls (fixed!)
    */
-  async getTokenHoldersWithBalances(): Promise<TokenHolder[]> {
+  async getTokenHoldersWithBalances(eligiblePlayers?: string[]): Promise<TokenHolder[]> {
     try {
       console.log('[SOLANA] Fetching token holders using optimized approach...');
       
-      // Exclude Boson token - only get player tokens for snapshots
-      const playerModules = Array.from(this.playerMints.keys()).filter(m => m !== 'Boson');
-      console.log(`[SOLANA] Querying ${playerModules.length} player tokens (excludes Boson game token)...`);
+      // Determine which players to process
+      let playerModules: string[];
+      if (eligiblePlayers && eligiblePlayers.length > 0) {
+        // Filter to only eligible players and exclude Boson
+        playerModules = eligiblePlayers.filter(m => m !== 'Boson' && this.playerMints.has(m));
+        console.log(`[SOLANA] Querying ${playerModules.length} eligible player tokens (filtered from ${eligiblePlayers.length} eligible players)...`);
+      } else {
+        // Exclude Boson token - only get player tokens for snapshots
+        playerModules = Array.from(this.playerMints.keys()).filter(m => m !== 'Boson');
+        console.log(`[SOLANA] Querying ${playerModules.length} player tokens (excludes Boson game token)...`);
+      }
       
       const allHolders: TokenHolder[] = [];
       
@@ -818,19 +826,19 @@ export class SolanaAdapter implements IBlockchainService {
     moduleName: string,
     batchSize: number = 5
   ): Promise<Array<TransferResult & { address: string }>> {
-    console.log(`\n[SOLANA] Starting batch transfer of ${transfers.length} transfers in batches of ${batchSize}`);
+    console.log(`🚀 Processing ${transfers.length} transfers in batches of ${batchSize}...`);
     
     const results: Array<TransferResult & { address: string }> = [];
     
     // Process in batches to avoid overwhelming the RPC
     for (let i = 0; i < transfers.length; i += batchSize) {
       const batch = transfers.slice(i, i + batchSize);
-      console.log(`\n[SOLANA] Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(transfers.length / batchSize)} (${batch.length} transfers)`);
+      const batchNumber = Math.floor(i / batchSize) + 1;
+      const totalBatches = Math.ceil(transfers.length / batchSize);
       
       // Execute transfers in parallel within the batch
       const batchPromises = batch.map(async (transfer) => {
         try {
-          console.log(`[SOLANA] Batch transfer - Address: "${transfer.address}" (length: ${transfer.address.length})`);
           const result = await this.transferTokens(
             privateKeyString,
             transfer.address,
@@ -839,7 +847,6 @@ export class SolanaAdapter implements IBlockchainService {
           );
           return { ...result, address: transfer.address };
         } catch (error) {
-          console.error(`[SOLANA] Batch transfer failed for ${transfer.address}:`, error);
           return {
             success: false,
             transactionHash: '',
@@ -857,7 +864,6 @@ export class SolanaAdapter implements IBlockchainService {
         if (result.status === 'fulfilled') {
           results.push(result.value);
         } else {
-          console.error(`[SOLANA] Batch promise rejected:`, result.reason);
           results.push({
             success: false,
             transactionHash: '',
@@ -868,16 +874,34 @@ export class SolanaAdapter implements IBlockchainService {
         }
       }
       
+      // Show progress for each batch
+      const batchSuccess = batchResults.filter(r => r.status === 'fulfilled' && r.value.success).length;
+      const batchFailed = batchResults.length - batchSuccess;
+      
+      if (batchFailed > 0) {
+        console.log(`   Batch ${batchNumber}/${totalBatches}: ${batchSuccess} ✅, ${batchFailed} ❌`);
+      } else {
+        console.log(`   Batch ${batchNumber}/${totalBatches}: ${batchSuccess} ✅`);
+      }
+      
       // Small delay between batches to avoid rate limiting
       if (i + batchSize < transfers.length) {
-        console.log(`[SOLANA] Waiting 2s before next batch...`);
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
     
     const successCount = results.filter(r => r.success).length;
     const failCount = results.filter(r => !r.success).length;
-    console.log(`\n[SOLANA] Batch transfer complete: ${successCount} succeeded, ${failCount} failed`);
+    
+    console.log(`\n📊 Batch Transfer Complete: ${successCount} succeeded, ${failCount} failed`);
+    
+    // Only show details for failed transfers
+    if (failCount > 0) {
+      console.log('\n❌ Failed Transfers:');
+      results.filter(r => !r.success).forEach((result, index) => {
+        console.log(`   ${index + 1}. ${result.address.slice(0, 12)}... - ${result.error}`);
+      });
+    }
     
     return results;
   }

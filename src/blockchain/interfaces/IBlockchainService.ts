@@ -43,6 +43,11 @@ export interface IBlockchainService {
   getTokenHoldersWithBalances(): Promise<TokenHolder[]>;
 
   /**
+   * Get token holders with balances for specific player modules only
+   */
+  getTokenHoldersWithBalances(eligiblePlayers?: string[]): Promise<TokenHolder[]>;
+
+  /**
    * Get token holders for a specific player with balances
    */
   getTokenHoldersForPlayer(playerModule: string): Promise<TokenHolder[]>;

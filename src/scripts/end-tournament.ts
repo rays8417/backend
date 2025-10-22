@@ -218,7 +218,7 @@ async function distributeRewards(
     validTransfers.push({ reward, amountInBaseUnits });
   }
 
-  console.log(`\n📦 Processing ${validTransfers.length} transfers in parallel batches...`);
+  console.log(`\n📦 Processing ${validTransfers.length} transfers...`);
 
   // Check if blockchain adapter supports batch transfers (Solana does)
   if (typeof (blockchain as any).batchTransferTokens === 'function') {
@@ -240,8 +240,6 @@ async function distributeRewards(
       const { reward } = validTransfers[i];
 
       if (result.success) {
-        console.log(`✅ ${reward.address.slice(0, 12)}... → ${reward.rewardAmount} BOSON (TX: ${result.transactionHash.slice(0, 8)}...)`);
-        
         // Save successful reward to database
         await prisma.userReward.create({
           data: {
@@ -262,7 +260,7 @@ async function distributeRewards(
         success++;
         totalDistributed += reward.rewardAmount;
       } else {
-        console.log(`❌ ${reward.address.slice(0, 12)}... → ${reward.rewardAmount} BOSON (Error: ${result.error})`);
+        console.log(`❌ ${reward.address.slice(0, 12)}... → ${reward.rewardAmount} BOSON (${result.error})`);
         
         // Save failed reward to database
         await prisma.userReward.create({
@@ -289,8 +287,6 @@ async function distributeRewards(
     
     for (const { reward, amountInBaseUnits } of validTransfers) {
       try {
-        console.log(`💸 ${reward.address.slice(0, 12)}... → ${reward.rewardAmount} BOSON`);
-
         // Send transaction using blockchain abstraction
         const result = await blockchain.transferTokens(
           REWARD_CONFIG.ADMIN_PRIVATE_KEY!,
@@ -302,8 +298,6 @@ async function distributeRewards(
         if (!result.success) {
           throw new Error(result.error || 'Transaction failed');
         }
-
-        console.log(`   ✅ TX: ${result.transactionHash}\n`);
         
         // Save successful reward to database
         await prisma.userReward.create({
@@ -328,7 +322,7 @@ async function distributeRewards(
         // Small delay to prevent rate limiting
         await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error) {
-        console.log(`   ❌ Failed: ${error}\n`);
+        console.log(`❌ ${reward.address.slice(0, 12)}... → ${reward.rewardAmount} BOSON (${error instanceof Error ? error.message : String(error)})`);
         
         // Save failed reward to database
         await prisma.userReward.create({

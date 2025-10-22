@@ -19,6 +19,7 @@ interface TournamentData {
   venue?: string;
   matchId: string;
   rewardPoolAmount: number;
+  eligiblePlayers: string[];
 }
 
 // Sample tournament data (customize as needed)
@@ -30,7 +31,14 @@ const sampleTournament: TournamentData = {
   team2: "India",
   venue: "Perth Stadium",
   matchId: "130179", // Replace with actual Cricbuzz match ID
-  rewardPoolAmount: 100 // 100 BOSON tokens
+  rewardPoolAmount: 100, // 100 BOSON tokens
+  eligiblePlayers: [
+    "AbhishekSharma",
+    "ShubhmanGill",
+    "SuryakumarYadav",
+    "ShubhamDube",
+    "JaspreetBumhrah"
+  ]
 };
 
 /**
@@ -56,7 +64,8 @@ async function createTournament(tournamentData: TournamentData) {
       venue: tournamentData.venue,
       status: TournamentStatus.UPCOMING,
       matchId: tournamentData.matchId,
-      currentParticipants: 0
+      currentParticipants: 0,
+      eligiblePlayers: tournamentData.eligiblePlayers
     }
   });
 
