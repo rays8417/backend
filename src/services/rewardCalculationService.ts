@@ -78,11 +78,13 @@ async function getPlayerScores(tournamentId: string): Promise<PlayerScoreData[]>
 /**
  * Calculate user score based on MAINTAINED token holdings and player performance
  * Only counts tokens that were held BOTH pre-match AND post-match
+ * Only includes players where user has VP > 0 (validity points requirement)
  */
 function calculateUserScore(
   preMatchHoldings: ContractHolder['holdings'],
   postMatchHoldings: ContractHolder['holdings'],
-  playerScores: PlayerScoreData[]
+  playerScores: PlayerScoreData[],
+  userVPByPlayer: Map<string, number> = new Map()
 ): { totalScore: number; detailedScores: any[] } {
   let totalScore = 0;
   const detailedScores = [];
@@ -96,6 +98,15 @@ function calculateUserScore(
     const playerScore = playerScores.find(ps => ps.moduleName === preHolding.moduleName);
     
     if (playerScore) {
+      // Check if user has VP for this player (VP > 0 required)
+      const userVP = userVPByPlayer.get(preHolding.moduleName) || 0;
+      
+      if (userVP <= 0) {
+        // User has 0 VP for this player - exclude from score calculation
+        console.log(`[REWARD_CALC] Skipping player ${preHolding.moduleName}: user has 0 VP`);
+        continue;
+      }
+      
       const preBalance = BigInt(preHolding.balance);
       const postBalance = postHoldingsMap.get(preHolding.moduleName) || BigInt(0);
       
@@ -116,7 +127,8 @@ function calculateUserScore(
         postBalance: postBalance.toString(),
         maintainedBalance: maintainedBalance.toString(),
         playerScore: playerScore.fantasyPoints,
-        points: weightedPoints
+        points: weightedPoints,
+        userVP: userVP // Include VP info for debugging
       });
     }
   }
@@ -177,6 +189,46 @@ export async function calculateRewardsFromSnapshots(
       postMatchSnapshot.holders.map(h => [h.address, h])
     );
 
+    // Get tournament eligible players to check VP requirements
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { eligiblePlayers: true }
+    });
+
+    const eligiblePlayerModules = tournament?.eligiblePlayers || [];
+
+    // Batch fetch all user VP data to optimize performance
+    const uniqueAddresses = Array.from(
+      new Set(preMatchSnapshot.holders.map(h => h.address))
+    ).filter(addr => !ignored.has(addr.toLowerCase()));
+
+    console.log(`[REWARD_CALC] Fetching VP data for ${uniqueAddresses.length} users...`);
+    const usersWithVP = await prisma.user.findMany({
+      where: {
+        address: { in: uniqueAddresses }
+      },
+      include: {
+        points: {
+          where: {
+            type: 'VP',
+            playerModuleName: { in: eligiblePlayerModules }
+          }
+        }
+      }
+    });
+
+    // Create a map of address -> VP by player module name
+    const userVPByAddressMap = new Map<string, Map<string, number>>();
+    for (const user of usersWithVP) {
+      const vpMap = new Map<string, number>();
+      for (const point of user.points) {
+        if (point.playerModuleName) {
+          vpMap.set(point.playerModuleName, point.amount);
+        }
+      }
+      userVPByAddressMap.set(user.address, vpMap);
+    }
+
     for (const preHolder of preMatchSnapshot.holders) {
       if (ignored.has(preHolder.address.toLowerCase())) {
         continue;
@@ -192,11 +244,16 @@ export async function calculateRewardsFromSnapshots(
           continue;
         }
 
+        // Get user VP data from pre-fetched map
+        const userVPByPlayer = userVPByAddressMap.get(preHolder.address) || new Map<string, number>();
+
         // Calculate user score based on MAINTAINED holdings (min of pre and post)
+        // Only includes players where user has VP > 0
         const { totalScore: userScore, detailedScores } = calculateUserScore(
           preHolder.holdings,
           postHolder.holdings,
-          playerScores
+          playerScores,
+          userVPByPlayer
         );
 
         // Calculate total MAINTAINED tokens
@@ -338,5 +395,138 @@ export async function getRewardSummary(tournamentId: string): Promise<{
   } catch (error) {
     console.error('[REWARD_CALC] Error getting reward summary:', error);
     throw new Error(`Failed to get reward summary: ${error}`);
+  }
+}
+
+/**
+ * Reduce VP (Validity Points) for users after tournament ends
+ * Reduces VP by 1 for each player that played in the match
+ * Only reduces VP for users who participated in the tournament (had tokens in pre-match snapshot)
+ */
+export async function reduceVPAfterTournament(tournamentId: string): Promise<{
+  totalUsersAffected: number;
+  totalVPReduced: number;
+  details: Array<{ address: string; playersAffected: number; vpReduced: number }>;
+}> {
+  try {
+    console.log(`[VP_REDUCTION] Reducing VP after tournament ${tournamentId}...`);
+
+    // Get tournament details and player scores
+    const tournament = await prisma.tournament.findUnique({
+      where: { id: tournamentId },
+      select: { eligiblePlayers: true }
+    });
+
+    if (!tournament) {
+      throw new Error('Tournament not found');
+    }
+
+    // Get all players that played in the match (have scores)
+    const playerScores = await getPlayerScores(tournamentId);
+    const playersThatPlayed = playerScores.map(ps => ps.moduleName);
+    
+    if (playersThatPlayed.length === 0) {
+      console.log('[VP_REDUCTION] No players found in tournament - skipping VP reduction');
+      return {
+        totalUsersAffected: 0,
+        totalVPReduced: 0,
+        details: []
+      };
+    }
+
+    console.log(`[VP_REDUCTION] Players that played: ${playersThatPlayed.join(', ')}`);
+
+    // Get pre-match snapshot to find all users who participated
+    const preMatchSnapshot = await getContractSnapshot(tournamentId, 'PRE_MATCH');
+    
+    if (!preMatchSnapshot) {
+      console.log('[VP_REDUCTION] No pre-match snapshot found - skipping VP reduction');
+      return {
+        totalUsersAffected: 0,
+        totalVPReduced: 0,
+        details: []
+      };
+    }
+
+    // Get all unique addresses from pre-match snapshot
+    const participantAddresses = Array.from(
+      new Set(preMatchSnapshot.holders.map(h => h.address))
+    );
+
+    console.log(`[VP_REDUCTION] Found ${participantAddresses.length} participants`);
+
+    let totalUsersAffected = 0;
+    let totalVPReduced = 0;
+    const details: Array<{ address: string; playersAffected: number; vpReduced: number }> = [];
+
+    // Process each participant
+    for (const address of participantAddresses) {
+      try {
+        // Find user by address
+        const user = await prisma.user.findUnique({
+          where: { address },
+          include: {
+            points: {
+              where: {
+                type: 'VP',
+                playerModuleName: { in: playersThatPlayed }
+              }
+            }
+          }
+        });
+
+        if (!user) {
+          // User doesn't exist in database - skip
+          continue;
+        }
+
+        let userVPReduced = 0;
+        let playersAffected = 0;
+
+        // Reduce VP by 1 for each player that played
+        for (const playerModuleName of playersThatPlayed) {
+          const vpPoint = user.points.find(p => p.playerModuleName === playerModuleName);
+          
+          if (vpPoint && vpPoint.amount > 0) {
+            // Reduce VP by 1, but don't go below 0
+            const newAmount = Math.max(0, vpPoint.amount - 1);
+            
+            await prisma.point.update({
+              where: { id: vpPoint.id },
+              data: { amount: newAmount }
+            });
+
+            userVPReduced += (vpPoint.amount - newAmount);
+            playersAffected++;
+          }
+        }
+
+        if (playersAffected > 0) {
+          totalUsersAffected++;
+          totalVPReduced += userVPReduced;
+          details.push({
+            address,
+            playersAffected,
+            vpReduced: userVPReduced
+          });
+        }
+      } catch (error) {
+        console.error(`[VP_REDUCTION] Error processing user ${address}:`, error);
+        // Continue with other users
+      }
+    }
+
+    console.log(`[VP_REDUCTION] ✅ VP reduction completed:`);
+    console.log(`   Users affected: ${totalUsersAffected}`);
+    console.log(`   Total VP reduced: ${totalVPReduced}`);
+
+    return {
+      totalUsersAffected,
+      totalVPReduced,
+      details
+    };
+  } catch (error) {
+    console.error('[VP_REDUCTION] Error reducing VP after tournament:', error);
+    throw new Error(`Failed to reduce VP after tournament: ${error}`);
   }
 }

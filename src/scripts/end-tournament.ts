@@ -4,7 +4,7 @@ import { TournamentStatus } from '@prisma/client';
 import { Command } from 'commander';
 import { prisma } from '../prisma';
 import { createContractSnapshot, createSnapshotSummary } from '../services/contractSnapshotService';
-import { calculateRewardsFromSnapshots, RewardCalculation } from '../services/rewardCalculationService';
+import { calculateRewardsFromSnapshots, RewardCalculation, reduceVPAfterTournament } from '../services/rewardCalculationService';
 import { blockchain } from '../blockchain';
 import { REWARD_CONFIG } from '../config/reward.config';
 import { awardTournamentXP } from '../controllers/users.controller';
@@ -412,6 +412,12 @@ async function endTournamentWithSnapshot(tournamentId: string, options: any = {}
   // Step 4: Complete tournament
   const completedTournament = await completeTournament(tournamentId);
 
+  // Step 5: Reduce VP for users after tournament ends
+  console.log('\n🔻 REDUCING VALIDITY POINTS (VP)');
+  console.log('==================================\n');
+  const vpReductionResult = await reduceVPAfterTournament(tournamentId);
+  console.log(`✅ VP Reduction: ${vpReductionResult.totalUsersAffected} users affected, ${vpReductionResult.totalVPReduced} VP reduced\n`);
+
   // Final summary
   console.log('\n🎉 TOURNAMENT ENDED SUCCESSFULLY!');
   console.log('=================================');
@@ -425,6 +431,7 @@ async function endTournamentWithSnapshot(tournamentId: string, options: any = {}
   console.log('   ✅ Rewards calculated');
   console.log('   ✅ Rewards distributed on-chain');
   console.log('   ✅ XP awarded based on performance');
+  console.log('   ✅ VP reduced for players that played');
   console.log('   ✅ Tournament marked as COMPLETED\n');
 
   return { tournament: completedTournament, snapshot, rewardDistribution };
