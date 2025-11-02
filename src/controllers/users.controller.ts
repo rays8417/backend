@@ -1,6 +1,53 @@
 import { Request, Response } from 'express';
 import { prisma } from '../prisma';
 import { PLAYER_MODULES } from '../config/players.config';
+import { RewardDistributionResult } from '../services/rewardCalculationService';
+import { REWARD_CONFIG } from '../config/reward.config';
+
+/**
+ * Award invite reward to inviter
+ * - 15 XP per invited user
+ * - Increments the existing XP entry
+ */
+const awardInviteReward = async (inviterId: string, invitedUserAddress: string): Promise<void> => {
+  try {
+    console.log(`[INVITE REWARD] Awarding 15 XP to inviter ${inviterId} for inviting ${invitedUserAddress}`);
+    
+    // Find existing XP entry
+    const existingXP = await prisma.point.findFirst({
+      where: {
+        userId: inviterId,
+        type: 'XP',
+        playerModuleName: null
+      }
+    });
+
+    if (existingXP) {
+      // Increment existing XP entry
+      await prisma.point.update({
+        where: { id: existingXP.id },
+        data: {
+          amount: existingXP.amount + 15
+        }
+      });
+      console.log(`[INVITE REWARD] ✅ Incremented XP for inviter ${inviterId} from ${existingXP.amount} to ${existingXP.amount + 15}`);
+    } else {
+      // Create new XP entry if none exists (shouldn't happen normally, but handle edge case)
+      await prisma.point.create({
+        data: {
+          userId: inviterId,
+          type: 'XP',
+          amount: 15,
+          playerModuleName: null
+        }
+      });
+      console.log(`[INVITE REWARD] ✅ Created new XP entry with 15 XP for inviter ${inviterId} (no existing entry found)`);
+    }
+  } catch (error) {
+    console.error('[INVITE REWARD] Error awarding invite reward:', error);
+    // Don't throw - we don't want to fail user tracking if reward fails
+  }
+};
 
 /**
  * Create welcome points for new users
@@ -187,6 +234,15 @@ export const trackUser = async (req: Request, res: Response) => {
       createWelcomePack(address).catch(error => {
         console.error('[TRACKER] Failed to create welcome pack:', error);
       });
+
+      // If user was invited, award 15 XP to the inviter (async, don't wait)
+      if (invitedByUserId) {
+        console.log(`[TRACKER] New user ${address} was invited. Awarding 15 XP to inviter ${invitedByUserId}...`);
+        // Fire and forget - don't await
+        awardInviteReward(invitedByUserId, address).catch(error => {
+          console.error('[TRACKER] Failed to award invite reward:', error);
+        });
+      }
     }
 
     res.json({ 
@@ -310,6 +366,176 @@ export const getUser = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error getting user:', error);
     res.status(500).json({ error: 'Failed to get user' });
+  }
+};
+
+
+const calculateTournamentXP = (totalScore: number): number => {
+  if (totalScore <= 0) {
+    return 0;
+  }
+
+  let xpToAward: number;
+
+  if (totalScore <= 50) {
+    // Tier 1: Linear for small scores (encourages participation)
+    xpToAward = Math.floor(totalScore / 10);
+  } else if (totalScore <= 200) {
+    // Tier 2: Base 5 XP + diminishing returns
+    xpToAward = 5 + Math.floor((totalScore - 50) / 20);
+  } else if (totalScore <= 1000) {
+    // Tier 3: More diminishing returns
+    xpToAward = 12 + Math.floor((totalScore - 200) / 50);
+  } else {
+    // Tier 4: Significant diminishing returns with cap at 100 XP
+    xpToAward = 28 + Math.floor((totalScore - 1000) / 100);
+    // Cap at 100 XP per tournament to prevent extreme values
+    xpToAward = Math.min(100, xpToAward);
+  }
+
+  // Ensure minimum 1 XP if they have any score
+  return Math.max(1, xpToAward);
+};
+
+/**
+ * Award XP to users based on tournament performance
+ * - Uses tiered system to prevent extreme XP values
+ * - Rewards participation while capping high performers
+ * - Increments existing XP entry for each user
+ */
+export const awardTournamentXP = async (
+  tournamentId: string,
+  rewardDistribution: RewardDistributionResult
+): Promise<void> => {
+  try {
+    console.log(`[TOURNAMENT XP] Awarding XP based on tournament performance: ${tournamentId}`);
+    
+    let totalXPAwarded = 0;
+    let usersAwarded = 0;
+    let usersFailed = 0;
+
+    for (const calculation of rewardDistribution.rewardCalculations) {
+      try {
+        const { address, totalScore } = calculation;
+        
+        // Skip if user has no score
+        if (totalScore <= 0) {
+          continue;
+        }
+
+        // Calculate XP using tiered system
+        const xpToAward = calculateTournamentXP(totalScore);
+
+        // Find user by address
+        const user = await prisma.user.findUnique({
+          where: { address }
+        });
+
+        if (!user) {
+          console.log(`[TOURNAMENT XP] User not found for address ${address}, skipping...`);
+          continue;
+        }
+
+        // Show detailed breakdown for this user's calculation
+        if (calculation.holdings && calculation.holdings.length > 0) {
+          console.log(`\n[TOURNAMENT XP] 📊 Detailed Score Breakdown for ${address.slice(0, 12)}...:`);
+          console.log(`   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+          console.log(`   Player Holdings & Contributions:`);
+          
+          let sumCheck = 0;
+          // Use the same decimal multiplier as in rewardCalculationService
+          // Player tokens use 3 decimals (same as Boson token)
+          const decimalMultiplier = Math.pow(10, REWARD_CONFIG.BOSON_DECIMALS); // 10^3 = 1000
+          
+          for (const holding of calculation.holdings) {
+            const maintainedTokens = BigInt(holding.maintainedBalance);
+            const tokenRatio = Number(maintainedTokens) / decimalMultiplier;
+            const points = holding.points;
+            sumCheck += points;
+            
+            console.log(`   • ${holding.moduleName}:`);
+            console.log(`     - Player Fantasy Points: ${holding.playerScore.toFixed(2)}`);
+            console.log(`     - Maintained Balance (raw): ${maintainedTokens.toString()}`);
+            console.log(`     - Token Amount: ${tokenRatio.toFixed(3)} tokens (${maintainedTokens.toString()} / ${decimalMultiplier})`);
+            console.log(`     - Contribution: ${points.toFixed(2)} = ${holding.playerScore.toFixed(2)} × ${tokenRatio.toFixed(3)}`);
+          }
+          
+          console.log(`   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+          console.log(`   ✅ Total Fantasy Score: ${totalScore.toFixed(2)} (verified: ${sumCheck.toFixed(2)})`);
+          
+          // Show XP calculation step-by-step
+          console.log(`\n   🎯 XP Calculation (Tiered System):`);
+          if (totalScore <= 50) {
+            const tierXP = Math.floor(totalScore / 10);
+            console.log(`     Tier 1 (0-50): floor(${totalScore.toFixed(2)} / 10) = ${tierXP} XP`);
+          } else if (totalScore <= 200) {
+            const tier2Calc = Math.floor((totalScore - 50) / 20);
+            console.log(`     Tier 2 (50-200): 5 + floor((${totalScore.toFixed(2)} - 50) / 20)`);
+            console.log(`                      = 5 + floor(${(totalScore - 50).toFixed(2)} / 20)`);
+            console.log(`                      = 5 + ${tier2Calc} = ${xpToAward} XP`);
+          } else if (totalScore <= 1000) {
+            const tier3Calc = Math.floor((totalScore - 200) / 50);
+            console.log(`     Tier 3 (200-1000): 12 + floor((${totalScore.toFixed(2)} - 200) / 50)`);
+            console.log(`                        = 12 + floor(${(totalScore - 200).toFixed(2)} / 50)`);
+            console.log(`                        = 12 + ${tier3Calc} = ${xpToAward} XP`);
+          } else {
+            const tier4Uncapped = 28 + Math.floor((totalScore - 1000) / 100);
+            console.log(`     Tier 4 (1000+): 28 + floor((${totalScore.toFixed(2)} - 1000) / 100)`);
+            console.log(`                      = 28 + floor(${(totalScore - 1000).toFixed(2)} / 100)`);
+            console.log(`                      = 28 + ${Math.floor((totalScore - 1000) / 100)} = ${tier4Uncapped} XP`);
+            if (tier4Uncapped > 100) {
+              console.log(`                      → CAPPED at 100 XP (was ${tier4Uncapped})`);
+            }
+          }
+          console.log(`   ✅ Final XP Awarded: ${xpToAward} XP\n`);
+        }
+
+        // Find existing XP entry
+        const existingXP = await prisma.point.findFirst({
+          where: {
+            userId: user.id,
+            type: 'XP',
+            playerModuleName: null
+          }
+        });
+
+        if (existingXP) {
+          // Increment existing XP entry
+          await prisma.point.update({
+            where: { id: existingXP.id },
+            data: {
+              amount: existingXP.amount + xpToAward
+            }
+          });
+          console.log(`[TOURNAMENT XP] ✅ ${address}: +${xpToAward} XP (score: ${totalScore.toFixed(2)})`);
+        } else {
+          // Create new XP entry if none exists
+          await prisma.point.create({
+            data: {
+              userId: user.id,
+              type: 'XP',
+              amount: xpToAward,
+              playerModuleName: null
+            }
+          });
+          console.log(`[TOURNAMENT XP] ✅ ${address}: Created with ${xpToAward} XP (score: ${totalScore.toFixed(2)})`);
+        }
+
+        totalXPAwarded += xpToAward;
+        usersAwarded++;
+      } catch (error) {
+        console.error(`[TOURNAMENT XP] Error awarding XP to ${calculation.address}:`, error);
+        usersFailed++;
+      }
+    }
+
+    console.log(`[TOURNAMENT XP] ✅ Tournament XP awarded!`);
+    console.log(`   Users awarded: ${usersAwarded}`);
+    console.log(`   Total XP awarded: ${totalXPAwarded}`);
+    console.log(`   Failed: ${usersFailed}`);
+  } catch (error) {
+    console.error('[TOURNAMENT XP] Error awarding tournament XP:', error);
+    // Don't throw - we don't want to fail tournament completion if XP awarding fails
   }
 };
 
