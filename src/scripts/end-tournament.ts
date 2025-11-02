@@ -7,6 +7,7 @@ import { createContractSnapshot, createSnapshotSummary } from '../services/contr
 import { calculateRewardsFromSnapshots, RewardCalculation } from '../services/rewardCalculationService';
 import { blockchain } from '../blockchain';
 import { REWARD_CONFIG } from '../config/reward.config';
+import { awardTournamentXP } from '../controllers/users.controller';
 
 /**
  * STEP 4: End Tournament
@@ -405,6 +406,9 @@ async function endTournamentWithSnapshot(tournamentId: string, options: any = {}
   // Step 3: Distribute rewards and save to database
   await distributeRewards(tournamentId, rewardPool.id, rewardDistribution.rewardCalculations);
 
+  // Step 3.5: Award XP to users based on tournament performance
+  await awardTournamentXP(tournamentId, rewardDistribution);
+
   // Step 4: Complete tournament
   const completedTournament = await completeTournament(tournamentId);
 
@@ -420,6 +424,7 @@ async function endTournamentWithSnapshot(tournamentId: string, options: any = {}
   console.log('   ✅ Post-match snapshot taken');
   console.log('   ✅ Rewards calculated');
   console.log('   ✅ Rewards distributed on-chain');
+  console.log('   ✅ XP awarded based on performance');
   console.log('   ✅ Tournament marked as COMPLETED\n');
 
   return { tournament: completedTournament, snapshot, rewardDistribution };

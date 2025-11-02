@@ -513,74 +513,21 @@ export class SolanaAdapter implements IBlockchainService {
         throw new Error(`Invalid transfer amount: ${amount}. Must be greater than 0.`);
       }
 
-      console.log(`[SOLANA] Transfer amount: ${transferAmount} (original: ${amount})`);
-      console.log(`[SOLANA] Source ATA: ${sourceATA.toBase58()}`);
-      console.log(`[SOLANA] Destination ATA: ${destATA.toBase58()}`);
-
-      // DIAGNOSTIC: Show admin wallet info and what tokens they have
-      console.log(`[SOLANA] Admin wallet address: ${keypair.publicKey.toBase58()}`);
-      
       // Check SOL balance for transaction fees
       const solBalance = await this.connection.getBalance(keypair.publicKey);
       const solBalanceFormatted = solBalance / 1e9;
-      console.log(`[SOLANA] Admin SOL balance: ${solBalanceFormatted.toFixed(4)} SOL (${solBalance} lamports)`);
       
       if (solBalance < 5000) { // Less than 0.000005 SOL - very low threshold
         console.warn(`[SOLANA] Warning: Very low SOL balance (${solBalanceFormatted.toFixed(6)} SOL). May cause transaction failures.`);
       }
       
-      console.log(`[SOLANA] Looking for Boson token account...`);
-      
-      try {
-        const adminTokenAccounts = await this.connection.getParsedTokenAccountsByOwner(
-          keypair.publicKey,
-          { programId: TOKEN_PROGRAM_ID }
-        );
-        
-        console.log(`[SOLANA] Admin wallet has ${adminTokenAccounts.value.length} token accounts:`);
-        for (const { pubkey, account } of adminTokenAccounts.value) {
-          const accountInfo = (account.data as any).parsed?.info;
-          if (accountInfo) {
-            console.log(`  - ${pubkey.toBase58()}: ${accountInfo.tokenAmount.amount} tokens (mint: ${accountInfo.mint})`);
-          }
-        }
-        
-        // Check if any token account matches the Boson mint
-        const bosonMint = mintAddress.toBase58();
-        const hasBosonTokens = adminTokenAccounts.value.some(({ account }) => {
-          const info = (account.data as any).parsed?.info;
-          return info && info.mint === bosonMint && BigInt(info.tokenAmount.amount) > 0n;
-        });
-        
-        if (!hasBosonTokens) {
-          console.log(`[SOLANA] ❌ Admin wallet has NO ${tokenType} tokens!`);
-          console.log(`[SOLANA] Expected Boson mint: ${bosonMint}`);
-          console.log(`[SOLANA] Admin needs to receive some ${tokenType} tokens before rewards can be distributed.`);
-        }
-      } catch (diagError) {
-        console.log(`[SOLANA] Could not check admin wallet tokens: ${diagError}`);
-      }
-
       // Check if source token account exists and has sufficient balance
       let sourceAccountInfo;
-      console.log(`[SOLANA] Checking source token account: ${sourceATA.toBase58()}`);
-      console.log(`[SOLANA] Expected mint: ${mintAddress.toBase58()}`);
-      console.log(`[SOLANA] Token type: ${tokenType}`);
       
       try {
         // Try to get account with default TOKEN_PROGRAM_ID first
         sourceAccountInfo = await getAccount(this.connection, sourceATA);
-        console.log(`[SOLANA] Found source account using TOKEN_PROGRAM_ID`);
         const currentBalance = sourceAccountInfo.amount;
-        
-        console.log(`[SOLANA] Source account details:`);
-        console.log(`  - Address: ${sourceATA.toBase58()}`);
-        console.log(`  - Owner: ${sourceAccountInfo.owner.toBase58()}`);
-        console.log(`  - Mint: ${sourceAccountInfo.mint.toBase58()}`);
-        console.log(`  - Amount: ${currentBalance.toString()}`);
-        console.log(`  - Required: ${transferAmount.toString()}`);
-        console.log(`  - Expected Mint: ${mintAddress.toBase58()}`);
-        console.log(`  - Token Program: ${sourceAccountInfo.owner.toBase58()}`);
         
         // Verify mint addresses match
         if (!sourceAccountInfo.mint.equals(mintAddress)) {
@@ -595,29 +542,18 @@ export class SolanaAdapter implements IBlockchainService {
         
         // Try to get account info directly to see if it exists but with different program
         try {
-          console.log(`[SOLANA] Checking if account exists with different program...`);
           const accountInfo = await this.connection.getAccountInfo(sourceATA);
           
           if (!accountInfo) {
             throw new Error(`Source token account ${sourceATA.toBase58()} does not exist. This means the admin wallet does not have any ${tokenType} tokens. Please ensure the admin wallet has sufficient tokens for distribution.`);
           }
           
-          console.log(`[SOLANA] Account exists but owner is: ${accountInfo.owner.toBase58()}`);
-          console.log(`[SOLANA] Expected TOKEN_PROGRAM_ID: ${TOKEN_PROGRAM_ID.toBase58()}`);
-          console.log(`[SOLANA] Expected TOKEN_2022_PROGRAM_ID: ${TOKEN_2022_PROGRAM_ID.toBase58()}`);
-          
-          if (accountInfo.owner.equals(TOKEN_2022_PROGRAM_ID)) {
-            console.log(`[SOLANA] Account uses TOKEN_2022_PROGRAM_ID - will handle this in token program detection below`);
-            // Continue processing, we'll detect this below
-          } else {
+          if (!accountInfo.owner.equals(TOKEN_2022_PROGRAM_ID)) {
             throw new Error(`Source account ${sourceATA.toBase58()} has unexpected owner: ${accountInfo.owner.toBase58()}`);
           }
         } catch (fallbackError) {
-          console.error(`[SOLANA] Fallback check failed:`, fallbackError);
-          
           if (accountError instanceof Error) {
             const errorMsg = accountError.message;
-            console.error(`[SOLANA] Original error message: ${errorMsg}`);
             
             if (errorMsg.includes('could not find account') || errorMsg.includes('Account does not exist')) {
               throw new Error(`Source token account ${sourceATA.toBase58()} does not exist. This means the admin wallet does not have any ${tokenType} tokens. Please ensure the admin wallet has sufficient tokens for distribution.`);
@@ -639,17 +575,8 @@ export class SolanaAdapter implements IBlockchainService {
       // Use getAccountInfo instead of getAccount to get better error handling
       try {
         const accountInfo = await this.connection.getAccountInfo(destATA);
-        if (accountInfo) {
-          destinationAccountExists = true;
-          console.log(`[SOLANA] Destination ATA exists: ${destATA.toBase58()}`);
-        } else {
-          console.log(`[SOLANA] Destination ATA does not exist, will create it: ${destATA.toBase58()}`);
-          destinationAccountExists = false;
-        }
+        destinationAccountExists = !!accountInfo;
       } catch (destAccountError) {
-        const errorMessage = destAccountError instanceof Error ? destAccountError.message : String(destAccountError);
-        console.log(`[SOLANA] Error checking destination account: ${errorMessage}`);
-        console.log(`[SOLANA] Assuming destination ATA does not exist, will create it: ${destATA.toBase58()}`);
         destinationAccountExists = false;
       }
 
@@ -662,21 +589,15 @@ export class SolanaAdapter implements IBlockchainService {
       // If we have sourceAccountInfo, use that to determine the program
       if (sourceAccountInfo && sourceAccountInfo.owner.equals(TOKEN_2022_PROGRAM_ID)) {
         tokenProgram = TOKEN_2022_PROGRAM_ID;
-        console.log(`[SOLANA] Source account uses TOKEN_2022_PROGRAM_ID (from sourceAccountInfo)`);
-      } else if (sourceAccountInfo) {
-        console.log(`[SOLANA] Source account uses TOKEN_PROGRAM_ID (from sourceAccountInfo)`);
-      } else {
+      } else if (!sourceAccountInfo) {
         // If sourceAccountInfo is undefined, we need to check the account info directly
         try {
           const accountInfo = await this.connection.getAccountInfo(sourceATA);
           if (accountInfo && accountInfo.owner.equals(TOKEN_2022_PROGRAM_ID)) {
             tokenProgram = TOKEN_2022_PROGRAM_ID;
-            console.log(`[SOLANA] Source account uses TOKEN_2022_PROGRAM_ID (from getAccountInfo)`);
-          } else {
-            console.log(`[SOLANA] Source account uses TOKEN_PROGRAM_ID (from getAccountInfo)`);
           }
         } catch (err) {
-          console.log(`[SOLANA] Could not determine token program, defaulting to TOKEN_PROGRAM_ID`);
+          // Default to TOKEN_PROGRAM_ID
         }
       }
 
@@ -690,7 +611,6 @@ export class SolanaAdapter implements IBlockchainService {
           tokenProgram      // token program (match the source account)
         );
         transaction.add(createInstruction);
-        console.log(`[SOLANA] Added account creation instruction for ${destATA.toBase58()} using ${tokenProgram.toBase58()}`);
       }
 
       // Create transfer instruction with appropriate token program
@@ -703,20 +623,13 @@ export class SolanaAdapter implements IBlockchainService {
         tokenProgram
       );
       
-      console.log(`[SOLANA] Using token program: ${tokenProgram.toBase58()}`);
       transaction.add(transferInstruction);
-      
-      console.log(`[SOLANA] Sending transaction to ${toAddress} for ${amount} tokens...`);
       
       // First try to simulate the transaction to catch issues early
       try {
         const simulationResult = await this.connection.simulateTransaction(transaction, [keypair]);
         if (simulationResult.value.err) {
           throw new Error(`Transaction simulation failed: ${JSON.stringify(simulationResult.value.err)}`);
-        }
-        console.log(`[SOLANA] Transaction simulation successful`);
-        if (simulationResult.value.logs) {
-          console.log(`[SOLANA] Simulation logs:`, simulationResult.value.logs);
         }
       } catch (simError) {
         console.error(`[SOLANA] Simulation error:`, simError);
@@ -743,8 +656,6 @@ export class SolanaAdapter implements IBlockchainService {
       let confirmation;
       const maxAttempts = 30; // 30 attempts * 2s = 60s total
       
-      console.log(`[SOLANA] Confirming transaction via HTTP polling...`);
-      
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         try {
           const status = await this.connection.getSignatureStatus(signature);
@@ -753,21 +664,14 @@ export class SolanaAdapter implements IBlockchainService {
             const confirmationStatus = status.value.confirmationStatus;
             
             if (confirmationStatus === 'confirmed' || confirmationStatus === 'finalized') {
-              console.log(`[SOLANA] Transaction confirmed on-chain (status: ${confirmationStatus})`);
               confirmation = { value: { err: status.value.err } };
               break;
-            } else if (confirmationStatus === 'processed') {
-              console.log(`[SOLANA] Transaction processed, waiting for confirmation... (${attempt + 1}/${maxAttempts})`);
             }
-          } else {
-            console.log(`[SOLANA] Waiting for transaction to appear on-chain... (${attempt + 1}/${maxAttempts})`);
           }
           
           // Wait 2 seconds before next check
           await new Promise(resolve => setTimeout(resolve, 2000));
         } catch (statusError) {
-          console.error(`[SOLANA] Error checking transaction status (attempt ${attempt + 1}):`, statusError);
-          
           // Wait before retrying
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
