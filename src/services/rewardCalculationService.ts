@@ -217,13 +217,15 @@ export async function calculateRewardsFromSnapshots(
       }
     });
 
-    // Create a map of address -> VP by player module name
+    // Create a map of address -> VP by player module name (sum all entries for transaction history)
     const userVPByAddressMap = new Map<string, Map<string, number>>();
     for (const user of usersWithVP) {
       const vpMap = new Map<string, number>();
       for (const point of user.points) {
         if (point.playerModuleName) {
-          vpMap.set(point.playerModuleName, point.amount);
+          // Sum all VP entries for this player
+          const currentVP = vpMap.get(point.playerModuleName) || 0;
+          vpMap.set(point.playerModuleName, currentVP + point.amount);
         }
       }
       userVPByAddressMap.set(user.address, vpMap);
@@ -464,15 +466,7 @@ export async function reduceVPAfterTournament(tournamentId: string): Promise<{
       try {
         // Find user by address
         const user = await prisma.user.findUnique({
-          where: { address },
-          include: {
-            points: {
-              where: {
-                type: 'VP',
-                playerModuleName: { in: playersThatPlayed }
-              }
-            }
-          }
+          where: { address }
         });
 
         if (!user) {
@@ -483,20 +477,40 @@ export async function reduceVPAfterTournament(tournamentId: string): Promise<{
         let userVPReduced = 0;
         let playersAffected = 0;
 
-        // Reduce VP by 1 for each player that played
+        // Get all VP entries for this user to calculate current VP totals
+        const allVPPoints = await prisma.point.findMany({
+          where: {
+            userId: user.id,
+            type: 'VP',
+            playerModuleName: { in: playersThatPlayed }
+          }
+        });
+
+        // Calculate current VP for each player (sum of all entries)
+        const vpByPlayer = new Map<string, number>();
+        for (const point of allVPPoints) {
+          if (point.playerModuleName) {
+            const current = vpByPlayer.get(point.playerModuleName) || 0;
+            vpByPlayer.set(point.playerModuleName, current + point.amount);
+          }
+        }
+
+        // Reduce VP by 1 for each player that played (create new entry with -1)
         for (const playerModuleName of playersThatPlayed) {
-          const vpPoint = user.points.find(p => p.playerModuleName === playerModuleName);
+          const currentVP = vpByPlayer.get(playerModuleName) || 0;
           
-          if (vpPoint && vpPoint.amount > 0) {
-            // Reduce VP by 1, but don't go below 0
-            const newAmount = Math.max(0, vpPoint.amount - 1);
-            
-            await prisma.point.update({
-              where: { id: vpPoint.id },
-              data: { amount: newAmount }
+          if (currentVP > 0) {
+            // Create new VP entry with -1 to represent the reduction (transaction history)
+            await prisma.point.create({
+              data: {
+                userId: user.id,
+                type: 'VP',
+                amount: -1,
+                playerModuleName: playerModuleName
+              }
             });
 
-            userVPReduced += (vpPoint.amount - newAmount);
+            userVPReduced += 1;
             playersAffected++;
           }
         }

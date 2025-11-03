@@ -7,42 +7,22 @@ import { REWARD_CONFIG } from '../config/reward.config';
 /**
  * Award invite reward to inviter
  * - 15 XP per invited user
- * - Increments the existing XP entry
+ * - Creates a new XP entry for transaction history
  */
 const awardInviteReward = async (inviterId: string, invitedUserAddress: string): Promise<void> => {
   try {
     console.log(`[INVITE REWARD] Awarding 15 XP to inviter ${inviterId} for inviting ${invitedUserAddress}`);
     
-    // Find existing XP entry
-    const existingXP = await prisma.point.findFirst({
-      where: {
+    // Create new XP entry for transaction history
+    await prisma.point.create({
+      data: {
         userId: inviterId,
         type: 'XP',
+        amount: 15,
         playerModuleName: null
       }
     });
-
-    if (existingXP) {
-      // Increment existing XP entry
-      await prisma.point.update({
-        where: { id: existingXP.id },
-        data: {
-          amount: existingXP.amount + 15
-        }
-      });
-      console.log(`[INVITE REWARD] ✅ Incremented XP for inviter ${inviterId} from ${existingXP.amount} to ${existingXP.amount + 15}`);
-    } else {
-      // Create new XP entry if none exists (shouldn't happen normally, but handle edge case)
-      await prisma.point.create({
-        data: {
-          userId: inviterId,
-          type: 'XP',
-          amount: 15,
-          playerModuleName: null
-        }
-      });
-      console.log(`[INVITE REWARD] ✅ Created new XP entry with 15 XP for inviter ${inviterId} (no existing entry found)`);
-    }
+    console.log(`[INVITE REWARD] ✅ Created new XP entry with 15 XP for inviter ${inviterId}`);
   } catch (error) {
     console.error('[INVITE REWARD] Error awarding invite reward:', error);
     // Don't throw - we don't want to fail user tracking if reward fails
@@ -73,27 +53,17 @@ const createWelcomePoints = async (userId: string): Promise<void> => {
       })
     );
 
-    // Create 20 XP (only if it doesn't exist)
-    const existingXP = await prisma.point.findFirst({
-      where: {
+    // Create 20 XP (welcome bonus)
+    const xpPromise = prisma.point.create({
+      data: {
         userId,
         type: 'XP',
+        amount: 20,
         playerModuleName: null
       }
+    }).catch(error => {
+      console.error('[WELCOME POINTS] Failed to create XP:', error);
     });
-
-    const xpPromise = existingXP 
-      ? Promise.resolve(null) // XP already exists, skip
-      : prisma.point.create({
-          data: {
-            userId,
-            type: 'XP',
-            amount: 20,
-            playerModuleName: null
-          }
-        }).catch(error => {
-          console.error('[WELCOME POINTS] Failed to create XP:', error);
-        });
 
     // Wait for all points to be created
     await Promise.all([...vpPromises, xpPromise]);
@@ -336,10 +306,12 @@ export const getUser = async (req: Request, res: Response) => {
       .filter(p => p.type === 'VP')
       .reduce((sum, p) => sum + p.amount, 0);
     
+    // Calculate VP per player by summing all entries (for transaction history)
     const vpByPlayer = user.points
       .filter(p => p.type === 'VP' && p.playerModuleName)
       .reduce((acc, p) => {
-        acc[p.playerModuleName!] = p.amount;
+        const moduleName = p.playerModuleName!;
+        acc[moduleName] = (acc[moduleName] || 0) + p.amount;
         return acc;
       }, {} as Record<string, number>);
 
@@ -387,21 +359,21 @@ const calculateTournamentXP = (totalScore: number): number => {
     // Tier 3: More diminishing returns
     xpToAward = 12 + Math.floor((totalScore - 200) / 50);
   } else {
-    // Tier 4: Significant diminishing returns with cap at 100 XP
+    // Tier 4: Significant diminishing returns with cap at 150 XP
     xpToAward = 28 + Math.floor((totalScore - 1000) / 100);
-    // Cap at 100 XP per tournament to prevent extreme values
-    xpToAward = Math.min(100, xpToAward);
+    // Cap at 150 XP per tournament to prevent extreme values
+    xpToAward = Math.min(150, xpToAward);
   }
 
-  // Ensure minimum 1 XP if they have any score
-  return Math.max(1, xpToAward);
+  // Ensure minimum 10 XP if they have any score
+  return Math.max(10, xpToAward);
 };
 
 /**
  * Award XP to users based on tournament performance
  * - Uses tiered system to prevent extreme XP values
  * - Rewards participation while capping high performers
- * - Increments existing XP entry for each user
+ * - Creates new XP entry for each user for transaction history
  */
 export const awardTournamentXP = async (
   tournamentId: string,
@@ -483,43 +455,23 @@ export const awardTournamentXP = async (
             console.log(`     Tier 4 (1000+): 28 + floor((${totalScore.toFixed(2)} - 1000) / 100)`);
             console.log(`                      = 28 + floor(${(totalScore - 1000).toFixed(2)} / 100)`);
             console.log(`                      = 28 + ${Math.floor((totalScore - 1000) / 100)} = ${tier4Uncapped} XP`);
-            if (tier4Uncapped > 100) {
-              console.log(`                      → CAPPED at 100 XP (was ${tier4Uncapped})`);
+            if (tier4Uncapped > 150) {
+              console.log(`                      → CAPPED at 150 XP (was ${tier4Uncapped})`);
             }
           }
           console.log(`   ✅ Final XP Awarded: ${xpToAward} XP\n`);
         }
 
-        // Find existing XP entry
-        const existingXP = await prisma.point.findFirst({
-          where: {
+        // Create new XP entry for transaction history
+        await prisma.point.create({
+          data: {
             userId: user.id,
             type: 'XP',
+            amount: xpToAward,
             playerModuleName: null
           }
         });
-
-        if (existingXP) {
-          // Increment existing XP entry
-          await prisma.point.update({
-            where: { id: existingXP.id },
-            data: {
-              amount: existingXP.amount + xpToAward
-            }
-          });
-          console.log(`[TOURNAMENT XP] ✅ ${address}: +${xpToAward} XP (score: ${totalScore.toFixed(2)})`);
-        } else {
-          // Create new XP entry if none exists
-          await prisma.point.create({
-            data: {
-              userId: user.id,
-              type: 'XP',
-              amount: xpToAward,
-              playerModuleName: null
-            }
-          });
-          console.log(`[TOURNAMENT XP] ✅ ${address}: Created with ${xpToAward} XP (score: ${totalScore.toFixed(2)})`);
-        }
+        console.log(`[TOURNAMENT XP] ✅ ${address}: +${xpToAward} XP (score: ${totalScore.toFixed(2)})`);
 
         totalXPAwarded += xpToAward;
         usersAwarded++;

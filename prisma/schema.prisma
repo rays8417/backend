@@ -115,7 +115,8 @@ model User {
   inviter         User?    @relation("UserInvites", fields: [invitedBy], references: [id], onDelete: SetNull)
   
   @@map("users")
-}
+  SwapTransaction SwapTransaction[]
+} 
 
 model PlayerPack {
   id          String   @id @default(uuid())
@@ -143,8 +144,23 @@ model Point {
   
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  @@unique([userId, type, playerModuleName]) // Ensure unique VP per player per user
+  // Removed unique constraint to allow transaction history - each XP/VP award creates a new record
   @@map("points")
+}
+
+model SwapTransaction {
+  id          String   @id @default(uuid())
+  userId      String
+  tokenA        String
+  tokenB        String
+  tokenAmountA        Int
+  tokenAmountB        Int
+  swapDirection SwapDirection
+  transactionId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 // Enums
@@ -183,4 +199,9 @@ enum PackType {
 enum PointType {
   VP // Validity Points (per player)
   XP // Experience Points (general)
+}
+
+enum SwapDirection {
+  FROM_BOSON_TO_PLAYER
+  FROM_PLAYER_TO_BOSON
 }
