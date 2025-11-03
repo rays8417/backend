@@ -347,32 +347,28 @@ const calculateTournamentXP = (totalScore: number): number => {
     return 0;
   }
 
-  let xpToAward: number;
+  // Map tournament scores to XP range 300-800
+  // Using logarithmic scaling to prevent extreme scores from dominating
+  // Formula: XP = 300 + 500 * (log(1 + score/100) / log(1 + maxExpectedScore/100))
+  // Using maxExpectedScore of 5000 for scaling reference
+  const MAX_EXPECTED_SCORE = 5000;
+  const MIN_XP = 300;
+  const MAX_XP = 800;
+  const XP_RANGE = MAX_XP - MIN_XP;
 
-  if (totalScore <= 50) {
-    // Tier 1: Linear for small scores (encourages participation)
-    xpToAward = Math.floor(totalScore / 10);
-  } else if (totalScore <= 200) {
-    // Tier 2: Base 5 XP + diminishing returns
-    xpToAward = 5 + Math.floor((totalScore - 50) / 20);
-  } else if (totalScore <= 1000) {
-    // Tier 3: More diminishing returns
-    xpToAward = 12 + Math.floor((totalScore - 200) / 50);
-  } else {
-    // Tier 4: Significant diminishing returns with cap at 150 XP
-    xpToAward = 28 + Math.floor((totalScore - 1000) / 100);
-    // Cap at 150 XP per tournament to prevent extreme values
-    xpToAward = Math.min(150, xpToAward);
-  }
+  // Use square root scaling for smoother distribution
+  // Normalize score to 0-1 range using square root, then scale to XP range
+  const normalizedScore = Math.sqrt(Math.min(totalScore, MAX_EXPECTED_SCORE) / MAX_EXPECTED_SCORE);
+  const xpToAward = Math.floor(MIN_XP + normalizedScore * XP_RANGE);
 
-  // Ensure minimum 10 XP if they have any score
-  return Math.max(10, xpToAward);
+  // Clamp to ensure it's within 300-800 range
+  return Math.max(MIN_XP, Math.min(MAX_XP, xpToAward));
 };
 
 /**
  * Award XP to users based on tournament performance
- * - Uses tiered system to prevent extreme XP values
- * - Rewards participation while capping high performers
+ * - Maps tournament scores to XP range 300-800
+ * - Uses square root scaling for fair distribution
  * - Creates new XP entry for each user for transaction history
  */
 export const awardTournamentXP = async (
@@ -436,29 +432,17 @@ export const awardTournamentXP = async (
           console.log(`   ✅ Total Fantasy Score: ${totalScore.toFixed(2)} (verified: ${sumCheck.toFixed(2)})`);
           
           // Show XP calculation step-by-step
-          console.log(`\n   🎯 XP Calculation (Tiered System):`);
-          if (totalScore <= 50) {
-            const tierXP = Math.floor(totalScore / 10);
-            console.log(`     Tier 1 (0-50): floor(${totalScore.toFixed(2)} / 10) = ${tierXP} XP`);
-          } else if (totalScore <= 200) {
-            const tier2Calc = Math.floor((totalScore - 50) / 20);
-            console.log(`     Tier 2 (50-200): 5 + floor((${totalScore.toFixed(2)} - 50) / 20)`);
-            console.log(`                      = 5 + floor(${(totalScore - 50).toFixed(2)} / 20)`);
-            console.log(`                      = 5 + ${tier2Calc} = ${xpToAward} XP`);
-          } else if (totalScore <= 1000) {
-            const tier3Calc = Math.floor((totalScore - 200) / 50);
-            console.log(`     Tier 3 (200-1000): 12 + floor((${totalScore.toFixed(2)} - 200) / 50)`);
-            console.log(`                        = 12 + floor(${(totalScore - 200).toFixed(2)} / 50)`);
-            console.log(`                        = 12 + ${tier3Calc} = ${xpToAward} XP`);
-          } else {
-            const tier4Uncapped = 28 + Math.floor((totalScore - 1000) / 100);
-            console.log(`     Tier 4 (1000+): 28 + floor((${totalScore.toFixed(2)} - 1000) / 100)`);
-            console.log(`                      = 28 + floor(${(totalScore - 1000).toFixed(2)} / 100)`);
-            console.log(`                      = 28 + ${Math.floor((totalScore - 1000) / 100)} = ${tier4Uncapped} XP`);
-            if (tier4Uncapped > 150) {
-              console.log(`                      → CAPPED at 150 XP (was ${tier4Uncapped})`);
-            }
-          }
+          console.log(`\n   🎯 XP Calculation (Range: 300-800 XP):`);
+          const MAX_EXPECTED_SCORE = 5000;
+          const MIN_XP = 300;
+          const MAX_XP = 800;
+          const XP_RANGE = MAX_XP - MIN_XP;
+          const normalizedScore = Math.sqrt(Math.min(totalScore, MAX_EXPECTED_SCORE) / MAX_EXPECTED_SCORE);
+          console.log(`     Score: ${totalScore.toFixed(2)}`);
+          console.log(`     Normalized (sqrt): ${normalizedScore.toFixed(4)}`);
+          console.log(`     Formula: ${MIN_XP} + ${normalizedScore.toFixed(4)} × ${XP_RANGE}`);
+          console.log(`     = ${MIN_XP} + ${(normalizedScore * XP_RANGE).toFixed(2)}`);
+          console.log(`     = ${xpToAward} XP (range: ${MIN_XP}-${MAX_XP})`);
           console.log(`   ✅ Final XP Awarded: ${xpToAward} XP\n`);
         }
 
