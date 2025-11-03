@@ -14,6 +14,7 @@ import usersRoutes from './routes/users';
 import solanaRoutes from './routes/solana';
 import liveScoresRoutes from './routes/live-scores';
 import packsRoutes from './routes/packs';
+import swapsRoutes from './routes/swaps';
 import { createContractEventService } from './services/contractEventService';
 
 // Load environment variables
@@ -44,6 +45,7 @@ app.use('/api/users', usersRoutes);
 app.use('/api/solana', solanaRoutes);
 app.use('/api/live-scores', liveScoresRoutes);
 app.use('/api/packs', packsRoutes);
+app.use('/api/swaps', swapsRoutes);
 
 // Error handling middleware
 app.use(
