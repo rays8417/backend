@@ -355,3 +355,128 @@ export const purchasePack = async (userAddress: string, packType: number, transa
     throw error;
   }
 };
+
+/**
+ * Buy a player pack using XP
+ * XP costs: BASE = 400, PRIME = 1000, ULTRA = 2000
+ */
+export const buyPackWithXP = async (req: Request, res: Response) => {
+  try {
+    const { address, packType } = req.body;
+
+    if (!address || !packType) {
+      return res.status(400).json({
+        success: false,
+        error: 'Address and packType are required'
+      });
+    }
+
+    // Validate pack type
+    const validPackTypes = ['BASE', 'PRIME', 'ULTRA'];
+    if (!validPackTypes.includes(packType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid pack type. Must be BASE, PRIME, or ULTRA'
+      });
+    }
+
+    // XP costs for each pack type
+    const xpCosts: Record<string, number> = {
+      'BASE': 400,
+      'PRIME': 1000,
+      'ULTRA': 2000
+    };
+
+    const requiredXP = xpCosts[packType];
+
+    // Find user
+    const user = await prisma.user.findUnique({
+      where: { address },
+      include: {
+        points: {
+          where: { type: 'XP' }
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    // Calculate total XP
+    const totalXP = user.points.reduce((sum, point) => sum + point.amount, 0);
+
+    // Check if user has enough XP
+    if (totalXP < requiredXP) {
+      return res.status(400).json({
+        success: false,
+        error: `Insufficient XP. Required: ${requiredXP}, Available: ${totalXP}`
+      });
+    }
+
+    // Get pack info to determine boson value
+    const packTypeNumber = packType === 'BASE' ? 20 : packType === 'PRIME' ? 50 : 100;
+    const packInfo = PACK_TYPES.find(p => p.type === packTypeNumber);
+    
+    if (!packInfo) {
+      return res.status(500).json({
+        success: false,
+        error: 'Pack type configuration not found'
+      });
+    }
+
+    // Generate pack data
+    const packData = await generatePackData(packInfo.price);
+
+    // Use transaction to ensure atomicity: create pack and deduct XP together
+    const result = await prisma.$transaction(async (tx) => {
+      // Create the pack in database
+      const playerPack = await tx.playerPack.create({
+        data: {
+          userId: user.id,
+          packType: packType as PackType,
+          isOpened: false,
+          players: packData.players as any,
+          totalValue: packData.totalValue
+        }
+      });
+
+      // Deduct XP by creating a negative XP entry
+      await tx.point.create({
+        data: {
+          userId: user.id,
+          type: 'XP',
+          amount: -requiredXP,
+          playerModuleName: null
+        }
+      });
+
+      return playerPack;
+    });
+
+    console.log(`[BUY PACK WITH XP] User ${address} purchased ${packType} pack (${result.id}) for ${requiredXP} XP`);
+
+    res.json({
+      success: true,
+      data: {
+        packId: result.id,
+        packType: result.packType,
+        totalValue: result.totalValue,
+        isOpened: result.isOpened,
+        createdAt: result.createdAt,
+        xpDeducted: requiredXP,
+        remainingXP: totalXP - requiredXP
+      }
+    });
+
+  } catch (error) {
+    console.error('Error buying pack with XP:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to buy pack with XP'
+    });
+  }
+};

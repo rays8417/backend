@@ -4,7 +4,8 @@ import {
   openPack,
   getUserPacks,
   getPackDetails,
-  getLatestUnopenedPack
+  getLatestUnopenedPack,
+  buyPackWithXP
 } from '../controllers/packs.controller';
 
 const router = express.Router();
@@ -39,6 +40,14 @@ router.get('/user/:address', getUserPacks);
  * @query { packType: string } - Pack type (BASE, PRIME, ULTRA)
  */
 router.get('/latest/:address', getLatestUnopenedPack);
+
+/**
+ * @route POST /api/packs/buy-with-xp
+ * @desc Buy a player pack using XP
+ * @access Public
+ * @body { address: string, packType: 'BASE' | 'PRIME' | 'ULTRA' }
+ */
+router.post('/buy-with-xp', buyPackWithXP);
 
 /**
  * @route GET /api/packs/:packId
